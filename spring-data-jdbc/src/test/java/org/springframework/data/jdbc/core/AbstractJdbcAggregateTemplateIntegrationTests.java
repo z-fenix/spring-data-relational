@@ -18,9 +18,8 @@ package org.springframework.data.jdbc.core;
 import static java.util.Arrays.*;
 import static java.util.Collections.*;
 import static org.assertj.core.api.Assertions.*;
-import static org.assertj.core.api.SoftAssertions.*;
+import static org.springframework.data.jdbc.testing.TestConfiguration.*;
 import static org.springframework.data.jdbc.testing.TestDatabaseFeatures.Feature.*;
-import static org.springframework.test.context.TestExecutionListeners.MergeMode.*;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,19 +30,18 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
-import org.assertj.core.api.SoftAssertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.dao.IncorrectUpdateSemanticsDataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.annotation.Id;
@@ -55,8 +53,9 @@ import org.springframework.data.domain.Persistable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jdbc.core.convert.DataAccessStrategy;
 import org.springframework.data.jdbc.core.convert.JdbcConverter;
-import org.springframework.data.jdbc.testing.AssumeFeatureTestExecutionListener;
 import org.springframework.data.jdbc.testing.EnabledOnFeature;
+import org.springframework.data.jdbc.testing.IntegrationTest;
+import org.springframework.data.jdbc.testing.TestClass;
 import org.springframework.data.jdbc.testing.TestConfiguration;
 import org.springframework.data.jdbc.testing.TestDatabaseFeatures;
 import org.springframework.data.mapping.context.InvalidPersistentPropertyPath;
@@ -66,11 +65,12 @@ import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
 import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.Table;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.CriteriaDefinition;
+import org.springframework.data.relational.core.query.Query;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestExecutionListeners;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Integration tests for {@link JdbcAggregateTemplate}.
@@ -87,24 +87,15 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Chirag Tailor
  * @author Vincent Galloy
  */
-@ContextConfiguration
-@Transactional
-@TestExecutionListeners(value = AssumeFeatureTestExecutionListener.class, mergeMode = MERGE_WITH_DEFAULTS)
-@ExtendWith(SpringExtension.class)
+@IntegrationTest
 abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 	@Autowired JdbcAggregateOperations template;
 	@Autowired NamedParameterJdbcOperations jdbcTemplate;
 	@Autowired RelationalMappingContext mappingContext;
+	@Autowired NamedParameterJdbcOperations jdbc;
 
 	LegoSet legoSet = createLegoSet("Star Destroyer");
-
-	@BeforeEach
-	void beforeEach(){
-		mappingContext.setSingleQueryLoadingEnabled(useSingleQuery());
-	}
-
-	abstract boolean useSingleQuery();
 
 	/**
 	 * creates an instance of {@link NoIdListChain4} with the following properties:
@@ -193,11 +184,11 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	private static LegoSet createLegoSet(String name) {
 
 		LegoSet entity = new LegoSet();
-		entity.name = (name);
+		entity.name = name;
 
 		Manual manual = new Manual();
-		manual.content = ("Accelerates to 99% of light speed; Destroys almost everything. See https://what-if.xkcd.com/1/");
-		entity.manual = (manual);
+		manual.content = "Accelerates to 99% of light speed; Destroys almost everything. See https://what-if.xkcd.com/1/";
+		entity.manual = manual;
 
 		return entity;
 	}
@@ -238,6 +229,62 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 				.containsExactlyInAnyOrder(tuple(entity.id, "entity"), tuple(yetAnother.id, "yetAnother"));
 	}
 
+	@Test // GH-1601
+	void findAllByQuery() {
+
+		template.save(SimpleListParent.of("one", "one_1"));
+		SimpleListParent two = template.save(SimpleListParent.of("two", "two_1", "two_2"));
+		template.save(SimpleListParent.of("three", "three_1", "three_2", "three_3"));
+
+		CriteriaDefinition criteria = CriteriaDefinition.from(Criteria.where("id").is(two.id));
+		Query query = Query.query(criteria);
+		Iterable<SimpleListParent> reloadedById = template.findAll(query, SimpleListParent.class);
+
+		assertThat(reloadedById).extracting(e -> e.id, e -> e.content.size()).containsExactly(tuple(two.id, 2));
+	}
+
+	@Test // GH-1601
+	void findOneByQuery() {
+
+		template.save(SimpleListParent.of("one", "one_1"));
+		SimpleListParent two = template.save(SimpleListParent.of("two", "two_1", "two_2"));
+		template.save(SimpleListParent.of("three", "three_1", "three_2", "three_3"));
+
+		CriteriaDefinition criteria = CriteriaDefinition.from(Criteria.where("id").is(two.id));
+		Query query = Query.query(criteria);
+		Optional<SimpleListParent> reloadedById = template.findOne(query, SimpleListParent.class);
+
+		assertThat(reloadedById).get().extracting(e -> e.id, e -> e.content.size()).containsExactly(two.id, 2);
+	}
+
+	@Test // GH-1601
+	void findOneByQueryNothingFound() {
+
+		template.save(SimpleListParent.of("one", "one_1"));
+		SimpleListParent two = template.save(SimpleListParent.of("two", "two_1", "two_2"));
+		template.save(SimpleListParent.of("three", "three_1", "three_2", "three_3"));
+
+		CriteriaDefinition criteria = CriteriaDefinition.from(Criteria.where("id").is(4711));
+		Query query = Query.query(criteria);
+		Optional<SimpleListParent> reloadedById = template.findOne(query, SimpleListParent.class);
+
+		assertThat(reloadedById).isEmpty();
+	}
+
+	@Test // GH-1601
+	void findOneByQueryToManyResults() {
+
+		template.save(SimpleListParent.of("one", "one_1"));
+		SimpleListParent two = template.save(SimpleListParent.of("two", "two_1", "two_2"));
+		template.save(SimpleListParent.of("three", "three_1", "three_2", "three_3"));
+
+		CriteriaDefinition criteria = CriteriaDefinition.from(Criteria.where("id").not(two.id));
+		Query query = Query.query(criteria);
+
+		assertThatExceptionOfType(IncorrectResultSizeDataAccessException.class)
+				.isThrownBy(() -> template.findOne(query, SimpleListParent.class));
+	}
+
 	@Test // DATAJDBC-112
 	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithReferencedEntityById() {
@@ -250,13 +297,10 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		assertThat(reloadedLegoSet.manual).isNotNull();
 
-		assertSoftly(softly -> {
-			softly.assertThat(reloadedLegoSet.manual.id) //
-					.isEqualTo(legoSet.manual.id) //
-					.isNotNull();
-			softly.assertThat(reloadedLegoSet.manual.content).isEqualTo(legoSet.manual.content);
-		});
-
+		assertThat(reloadedLegoSet.manual.id) //
+				.isEqualTo(legoSet.manual.id) //
+				.isNotNull();
+		assertThat(reloadedLegoSet.manual.content).isEqualTo(legoSet.manual.content);
 	}
 
 	@Test // DATAJDBC-112
@@ -324,7 +368,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		assertThatThrownBy(() -> template.findAll(LegoSet.class, Sort.by("somethingNotExistant")))
 				.isInstanceOf(InvalidPersistentPropertyPath.class);
-
 	}
 
 	@Test // DATAJDBC-112
@@ -343,7 +386,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithReferencedNullEntity() {
 
-		legoSet.manual = (null);
+		legoSet.manual = null;
 
 		template.save(legoSet);
 
@@ -360,11 +403,8 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.delete(legoSet);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(template.findAll(LegoSet.class)).isEmpty();
-			softly.assertThat(template.findAll(Manual.class)).isEmpty();
-		});
+		assertThat(template.findAll(LegoSet.class)).isEmpty();
+		assertThat(template.findAll(Manual.class)).isEmpty();
 	}
 
 	@Test // DATAJDBC-112
@@ -375,12 +415,8 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.deleteAll(LegoSet.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(template.findAll(LegoSet.class)).isEmpty();
-			softly.assertThat(template.findAll(Manual.class)).isEmpty();
-		});
-
+		assertThat(template.findAll(LegoSet.class)).isEmpty();
+		assertThat(template.findAll(Manual.class)).isEmpty();
 	}
 
 	@Test // GH-537
@@ -393,11 +429,8 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.deleteAll(List.of(legoSet1, legoSet2));
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(template.findAll(LegoSet.class)).extracting(l -> l.name).containsExactly("Some other Name");
-			softly.assertThat(template.findAll(Manual.class)).hasSize(1);
-		});
+		assertThat(template.findAll(LegoSet.class)).extracting(l -> l.name).containsExactly("Some other Name");
+		assertThat(template.findAll(Manual.class)).hasSize(1);
 	}
 
 	@Test // GH-537
@@ -410,11 +443,8 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.deleteAllById(List.of(legoSet1.id, legoSet2.id), LegoSet.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(template.findAll(LegoSet.class)).extracting(l -> l.name).containsExactly("Some other Name");
-			softly.assertThat(template.findAll(Manual.class)).hasSize(1);
-		});
+		assertThat(template.findAll(LegoSet.class)).extracting(l -> l.name).containsExactly("Some other Name");
+		assertThat(template.findAll(Manual.class)).hasSize(1);
 	}
 
 	@Test
@@ -471,9 +501,9 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		template.save(legoSet);
 
 		Manual manual = new Manual();
-		manual.id = (23L);
-		manual.content = ("Some content");
-		legoSet.manual = (manual);
+		manual.id = 23L;
+		manual.content = "Some content";
+		legoSet.manual = manual;
 
 		template.save(legoSet);
 
@@ -488,18 +518,14 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.save(legoSet);
 
-		legoSet.manual = (null);
+		legoSet.manual = null;
 
 		template.save(legoSet);
 
 		LegoSet reloadedLegoSet = template.findById(legoSet.id, LegoSet.class);
 
-		SoftAssertions softly = new SoftAssertions();
-
-		softly.assertThat(reloadedLegoSet.manual).isNull();
-		softly.assertThat(template.findAll(Manual.class)).describedAs("Manuals failed to delete").isEmpty();
-
-		softly.assertAll();
+		assertThat(reloadedLegoSet.manual).isNull();
+		assertThat(template.findAll(Manual.class)).describedAs("Manuals failed to delete").isEmpty();
 	}
 
 	@Test
@@ -507,7 +533,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	void updateFailedRootDoesNotExist() {
 
 		LegoSet entity = new LegoSet();
-		entity.id = (100L); // does not exist in the database
+		entity.id = 100L; // does not exist in the database
 
 		assertThatExceptionOfType(DbActionExecutionException.class) //
 				.isThrownBy(() -> template.save(entity)) //
@@ -521,18 +547,15 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		template.save(legoSet);
 
 		Manual manual = new Manual();
-		manual.content = ("other content");
-		legoSet.manual = (manual);
+		manual.content = "other content";
+		legoSet.manual = manual;
 
 		template.save(legoSet);
 
 		LegoSet reloadedLegoSet = template.findById(legoSet.id, LegoSet.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(reloadedLegoSet.manual.content).isEqualTo("other content");
-			softly.assertThat(template.findAll(Manual.class)).describedAs("There should be only one manual").hasSize(1);
-		});
+		assertThat(reloadedLegoSet.manual.content).isEqualTo("other content");
+		assertThat(template.findAll(Manual.class)).describedAs("There should be only one manual").hasSize(1);
 	}
 
 	@Test // DATAJDBC-112
@@ -541,7 +564,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		template.save(legoSet);
 
-		legoSet.manual.content = ("new content");
+		legoSet.manual.content = "new content";
 
 		template.save(legoSet);
 
@@ -624,14 +647,11 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		LegoSet reloadedLegoSet = template.findById(legoSet.id, LegoSet.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(reloadedLegoSet.alternativeInstructions).isNotNull();
-			softly.assertThat(reloadedLegoSet.alternativeInstructions.id).isNotNull();
-			softly.assertThat(reloadedLegoSet.alternativeInstructions.id).isNotEqualTo(reloadedLegoSet.manual.id);
-			softly.assertThat(reloadedLegoSet.alternativeInstructions.content)
-					.isEqualTo(reloadedLegoSet.alternativeInstructions.content);
-		});
+		assertThat(reloadedLegoSet.alternativeInstructions).isNotNull();
+		assertThat(reloadedLegoSet.alternativeInstructions.id).isNotNull();
+		assertThat(reloadedLegoSet.alternativeInstructions.id).isNotEqualTo(reloadedLegoSet.manual.id);
+		assertThat(reloadedLegoSet.alternativeInstructions.content)
+				.isEqualTo(reloadedLegoSet.alternativeInstructions.content);
 	}
 
 	@Test // DATAJDBC-276
@@ -863,6 +883,9 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(saved.four).describedAs("Something went wrong during saving").isNotNull();
 
 		NoIdListChain4 reloaded = template.findById(saved.four, NoIdListChain4.class);
+
+		assertThat(reloaded.chain3).hasSameSizeAs(saved.chain3);
+		assertThat(reloaded.chain3.get(0).chain2).hasSameSizeAs(saved.chain3.get(0).chain2);
 		assertThat(reloaded).isEqualTo(saved);
 	}
 
@@ -873,14 +896,11 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		NoIdListChain4 saved = template.save(createNoIdTree());
 		template.deleteById(saved.four, NoIdListChain4.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(count("NO_ID_LIST_CHAIN4")).describedAs("Chain4 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_LIST_CHAIN3")).describedAs("Chain3 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_LIST_CHAIN2")).describedAs("Chain2 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_LIST_CHAIN1")).describedAs("Chain1 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_LIST_CHAIN0")).describedAs("Chain0 elements got deleted").isEqualTo(0);
-		});
+		assertThat(count("NO_ID_LIST_CHAIN4")).describedAs("Chain4 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_LIST_CHAIN3")).describedAs("Chain3 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_LIST_CHAIN2")).describedAs("Chain2 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_LIST_CHAIN1")).describedAs("Chain1 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_LIST_CHAIN0")).describedAs("Chain0 elements got deleted").isEqualTo(0);
 	}
 
 	@Test
@@ -902,14 +922,11 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		NoIdMapChain4 saved = template.save(createNoIdMapTree());
 		template.deleteById(saved.four, NoIdMapChain4.class);
 
-		assertSoftly(softly -> {
-
-			softly.assertThat(count("NO_ID_MAP_CHAIN4")).describedAs("Chain4 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_MAP_CHAIN3")).describedAs("Chain3 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_MAP_CHAIN2")).describedAs("Chain2 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_MAP_CHAIN1")).describedAs("Chain1 elements got deleted").isEqualTo(0);
-			softly.assertThat(count("NO_ID_MAP_CHAIN0")).describedAs("Chain0 elements got deleted").isEqualTo(0);
-		});
+		assertThat(count("NO_ID_MAP_CHAIN4")).describedAs("Chain4 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_MAP_CHAIN3")).describedAs("Chain3 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_MAP_CHAIN2")).describedAs("Chain2 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_MAP_CHAIN1")).describedAs("Chain1 elements got deleted").isEqualTo(0);
+		assertThat(count("NO_ID_MAP_CHAIN0")).describedAs("Chain0 elements got deleted").isEqualTo(0);
 	}
 
 	@Test // DATAJDBC-431
@@ -1154,6 +1171,103 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(template.findById(entity.id, EnumArrayOwner.class).digits).isEqualTo(new Color[] { Color.BLUE });
 	}
 
+	@Test // GH-1448
+	void multipleCollections() {
+
+		MultipleCollections aggregate = new MultipleCollections();
+		aggregate.name = "aggregate";
+
+		aggregate.listElements.add(new ListElement("one"));
+		aggregate.listElements.add(new ListElement("two"));
+		aggregate.listElements.add(new ListElement("three"));
+
+		aggregate.setElements.add(new SetElement("one"));
+		aggregate.setElements.add(new SetElement("two"));
+
+		aggregate.mapElements.put("alpha", new MapElement("one"));
+		aggregate.mapElements.put("beta", new MapElement("two"));
+		aggregate.mapElements.put("gamma", new MapElement("three"));
+		aggregate.mapElements.put("delta", new MapElement("four"));
+
+		template.save(aggregate);
+
+		MultipleCollections reloaded = template.findById(aggregate.id, MultipleCollections.class);
+
+		assertThat(reloaded.name).isEqualTo(aggregate.name);
+
+		assertThat(reloaded.listElements).containsExactly(aggregate.listElements.get(0), aggregate.listElements.get(1),
+				aggregate.listElements.get(2));
+
+		assertThat(reloaded.setElements).containsExactlyInAnyOrder(aggregate.setElements.toArray(new SetElement[0]));
+
+		assertThat(reloaded.mapElements.get("alpha")).isEqualTo(new MapElement("one"));
+		assertThat(reloaded.mapElements.get("beta")).isEqualTo(new MapElement("two"));
+		assertThat(reloaded.mapElements.get("gamma")).isEqualTo(new MapElement("three"));
+		assertThat(reloaded.mapElements.get("delta")).isEqualTo(new MapElement("four"));
+	}
+
+	@Test // GH-1448
+	void multipleCollectionsWithEmptySet() {
+
+		MultipleCollections aggregate = new MultipleCollections();
+		aggregate.name = "aggregate";
+
+		aggregate.listElements.add(new ListElement("one"));
+		aggregate.listElements.add(new ListElement("two"));
+		aggregate.listElements.add(new ListElement("three"));
+
+		aggregate.mapElements.put("alpha", new MapElement("one"));
+		aggregate.mapElements.put("beta", new MapElement("two"));
+		aggregate.mapElements.put("gamma", new MapElement("three"));
+		aggregate.mapElements.put("delta", new MapElement("four"));
+
+		template.save(aggregate);
+
+		MultipleCollections reloaded = template.findById(aggregate.id, MultipleCollections.class);
+
+		assertThat(reloaded.name).isEqualTo(aggregate.name);
+
+		assertThat(reloaded.listElements).containsExactly(aggregate.listElements.get(0), aggregate.listElements.get(1),
+				aggregate.listElements.get(2));
+
+		assertThat(reloaded.setElements).containsExactlyInAnyOrder(aggregate.setElements.toArray(new SetElement[0]));
+
+		assertThat(reloaded.mapElements.get("alpha")).isEqualTo(new MapElement("one"));
+		assertThat(reloaded.mapElements.get("beta")).isEqualTo(new MapElement("two"));
+		assertThat(reloaded.mapElements.get("gamma")).isEqualTo(new MapElement("three"));
+		assertThat(reloaded.mapElements.get("delta")).isEqualTo(new MapElement("four"));
+	}
+
+	@Test // GH-1448
+	void multipleCollectionsWithEmptyList() {
+
+		MultipleCollections aggregate = new MultipleCollections();
+		aggregate.name = "aggregate";
+
+		aggregate.setElements.add(new SetElement("one"));
+		aggregate.setElements.add(new SetElement("two"));
+
+		aggregate.mapElements.put("alpha", new MapElement("one"));
+		aggregate.mapElements.put("beta", new MapElement("two"));
+		aggregate.mapElements.put("gamma", new MapElement("three"));
+		aggregate.mapElements.put("delta", new MapElement("four"));
+
+		template.save(aggregate);
+
+		MultipleCollections reloaded = template.findById(aggregate.id, MultipleCollections.class);
+
+		assertThat(reloaded.name).isEqualTo(aggregate.name);
+
+		assertThat(reloaded.listElements).containsExactly();
+
+		assertThat(reloaded.setElements).containsExactlyInAnyOrder(aggregate.setElements.toArray(new SetElement[0]));
+
+		assertThat(reloaded.mapElements.get("alpha")).isEqualTo(new MapElement("one"));
+		assertThat(reloaded.mapElements.get("beta")).isEqualTo(new MapElement("two"));
+		assertThat(reloaded.mapElements.get("gamma")).isEqualTo(new MapElement("three"));
+		assertThat(reloaded.mapElements.get("delta")).isEqualTo(new MapElement("four"));
+	}
+
 	private <T extends Number> void saveAndUpdateAggregateWithVersion(VersionedAggregate aggregate,
 			Function<Number, T> toConcreteNumber) {
 		saveAndUpdateAggregateWithVersion(aggregate, toConcreteNumber, 0);
@@ -1281,6 +1395,29 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		private String content;
 	}
 
+	@SuppressWarnings("unused")
+	static class SimpleListParent {
+
+		@Id private Long id;
+		String name;
+		List<ElementNoId> content = new ArrayList<>();
+
+		static SimpleListParent of(String name, String... contents) {
+
+			SimpleListParent parent = new SimpleListParent();
+			parent.name = name;
+
+			for (String content : contents) {
+
+				ElementNoId element = new ElementNoId();
+				element.content = content;
+				parent.content.add(element);
+			}
+
+			return parent;
+		}
+	}
+
 	@Table("LIST_PARENT")
 	@SuppressWarnings("unused")
 	static class ListParent {
@@ -1400,6 +1537,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(zeroValue);
 		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [zeroValue='" + zeroValue + '\'' + ']';
+			return sb;
+		}
 	}
 
 	static class NoIdListChain1 {
@@ -1419,6 +1562,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Override
 		public int hashCode() {
 			return Objects.hash(oneValue, chain0);
+		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [oneValue='" + oneValue + '\'' + ", chain0=" + chain0 + ']';
+			return sb;
 		}
 	}
 
@@ -1440,6 +1589,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(twoValue, chain1);
 		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [twoValue='" + twoValue + '\'' + ", chain1=" + chain1 + ']';
+			return sb;
+		}
 	}
 
 	static class NoIdListChain3 {
@@ -1459,6 +1614,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Override
 		public int hashCode() {
 			return Objects.hash(threeValue, chain2);
+		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [threeValue='" + threeValue + '\'' + ", chain2=" + chain2 + ']';
+			return sb;
 		}
 	}
 
@@ -1482,6 +1643,14 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(four, fourValue, chain3);
 		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [four=" + four + ", fourValue='" + fourValue + '\'' + ", chain3="
+					+ chain3 + ']';
+			return sb;
+		}
+
 	}
 
 	/**
@@ -1504,6 +1673,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(zeroValue);
 		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [zeroValue='" + zeroValue + '\'' + ']';
+			return sb;
+		}
 	}
 
 	static class NoIdMapChain1 {
@@ -1523,6 +1698,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Override
 		public int hashCode() {
 			return Objects.hash(oneValue, chain0);
+		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [oneValue='" + oneValue + '\'' + ", chain0=" + chain0 + ']';
+			return sb;
 		}
 	}
 
@@ -1544,6 +1725,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(twoValue, chain1);
 		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [twoValue='" + twoValue + '\'' + ", chain1=" + chain1 + ']';
+			return sb;
+		}
 	}
 
 	static class NoIdMapChain3 {
@@ -1563,6 +1750,12 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Override
 		public int hashCode() {
 			return Objects.hash(threeValue, chain2);
+		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [threeValue='" + threeValue + '\'' + ", chain2=" + chain2 + ']';
+			return sb;
 		}
 	}
 
@@ -1585,6 +1778,13 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Override
 		public int hashCode() {
 			return Objects.hash(four, fourValue, chain3);
+		}
+
+		@Override
+		public String toString() {
+			String sb = getClass().getSimpleName() + " [four=" + four + ", fourValue='" + fourValue + '\'' + ", chain3="
+					+ chain3 + ']';
+			return sb;
 		}
 	}
 
@@ -1616,6 +1816,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 			return getId() == null;
 		}
 
+		@Override
 		public Long getId() {
 			return this.id;
 		}
@@ -1663,18 +1864,15 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof AggregateWithImmutableVersion))
+			if (!(o instanceof final AggregateWithImmutableVersion other))
 				return false;
-			final AggregateWithImmutableVersion other = (AggregateWithImmutableVersion) o;
 			final Object this$id = this.id;
 			final Object other$id = other.id;
-			if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			if (!Objects.equals(this$id, other$id))
 				return false;
 			final Object this$version = this.getVersion();
 			final Object other$version = other.getVersion();
-			if (this$version == null ? other$version != null : !this$version.equals(other$version))
-				return false;
-			return true;
+			return Objects.equals(this$version, other$version);
 		}
 
 		public int hashCode() {
@@ -1727,18 +1925,15 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof ConstructorInvocation))
+			if (!(o instanceof final ConstructorInvocation other))
 				return false;
-			final ConstructorInvocation other = (ConstructorInvocation) o;
 			final Object this$id = this.id;
 			final Object other$id = other.id;
-			if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			if (!Objects.equals(this$id, other$id))
 				return false;
 			final Object this$version = this.getVersion();
 			final Object other$version = other.getVersion();
-			if (this$version == null ? other$version != null : !this$version.equals(other$version))
-				return false;
-			return true;
+			return Objects.equals(this$version, other$version);
 		}
 
 		public int hashCode() {
@@ -1762,6 +1957,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 			this.version = (Long) newVersion;
 		}
 
+		@Override
 		public Long getVersion() {
 			return this.version;
 		}
@@ -1793,6 +1989,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 			this.version = (Integer) newVersion;
 		}
 
+		@Override
 		public Integer getVersion() {
 			return this.version;
 		}
@@ -1824,6 +2021,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 			this.version = (Short) newVersion;
 		}
 
+		@Override
 		public Short getVersion() {
 			return this.version;
 		}
@@ -1863,13 +2061,31 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@InsertOnlyProperty String insertOnly;
 	}
 
+	@Table
+	static class MultipleCollections {
+		@Id Long id;
+		String name;
+		List<ListElement> listElements = new ArrayList<>();
+		Set<SetElement> setElements = new HashSet<>();
+		Map<String, MapElement> mapElements = new HashMap<>();
+	}
+
+	record ListElement(String name) {
+	}
+
+	record SetElement(String name) {
+	}
+
+	record MapElement(String name) {
+	}
+
 	@Configuration
 	@Import(TestConfiguration.class)
 	static class Config {
 
 		@Bean
-		Class<?> testClass() {
-			return JdbcAggregateTemplateIntegrationTests.class;
+		TestClass testClass() {
+			return TestClass.of(JdbcAggregateTemplateIntegrationTests.class);
 		}
 
 		@Bean
@@ -1879,16 +2095,13 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		}
 	}
 
-	static class JdbcAggregateTemplateIntegrationTests extends AbstractJdbcAggregateTemplateIntegrationTests {
-		@Override
-		boolean useSingleQuery() {
-			return false;
-		}
-	}
-	static class JdbcAggregateTemplateSqlIntegrationTests extends AbstractJdbcAggregateTemplateIntegrationTests {
-		@Override
-		boolean useSingleQuery() {
-			return true;
-		}
+	@ContextConfiguration(classes = Config.class)
+	static class JdbcAggregateTemplateIntegrationTests extends AbstractJdbcAggregateTemplateIntegrationTests {}
+
+	@ActiveProfiles(value = PROFILE_SINGLE_QUERY_LOADING)
+	@ContextConfiguration(classes = Config.class)
+	static class JdbcAggregateTemplateSingleQueryLoadingIntegrationTests
+			extends AbstractJdbcAggregateTemplateIntegrationTests {
+
 	}
 }

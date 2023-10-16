@@ -21,6 +21,7 @@ import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.aot.hint.TypeReference;
+import org.springframework.data.jdbc.core.dialect.JdbcPostgresDialect;
 import org.springframework.data.jdbc.repository.support.SimpleJdbcRepository;
 import org.springframework.data.relational.auditing.RelationalAuditingCallback;
 import org.springframework.data.relational.core.mapping.event.AfterConvertCallback;
@@ -54,5 +55,12 @@ class JdbcRuntimeHints implements RuntimeHintsRegistrar {
 				TypeReference.of("org.springframework.aop.SpringProxy"),
 				TypeReference.of("org.springframework.aop.framework.Advised"),
 				TypeReference.of("org.springframework.core.DecoratingProxy"));
+
+		hints.reflection().registerType(TypeReference.of("org.postgresql.jdbc.TypeInfoCache"),
+				MemberCategory.PUBLIC_CLASSES);
+
+		for (Class<?> simpleType : JdbcPostgresDialect.INSTANCE.simpleTypes()) {
+			hints.reflection().registerType(TypeReference.of(simpleType), MemberCategory.PUBLIC_CLASSES);
+		}
 	}
 }

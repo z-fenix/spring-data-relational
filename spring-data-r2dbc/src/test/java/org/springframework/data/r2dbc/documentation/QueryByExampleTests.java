@@ -60,7 +60,7 @@ public class QueryByExampleTests {
 		// do whatever with the result
 		// end::example[]
 
-		employees //
+		repository.findAll(example) //
 				.as(StepVerifier::create) //
 				.expectNext(new Employee(1, "Frodo", "ring bearer")) //
 				.verifyComplete();
@@ -92,7 +92,7 @@ public class QueryByExampleTests {
 		// do whatever with the result
 		// end::example-2[]
 
-		employees //
+		repository.findAll(example) //
 				.as(StepVerifier::create) //
 				.expectNext(new Employee(1, "Frodo Baggins", "ring bearer")) //
 				.expectNext(new Employee(1, "Bilbo Baggins", "burglar")) //

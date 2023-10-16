@@ -137,16 +137,12 @@ class ParameterMetadataProvider implements Iterable<ParameterMetadata> {
 			return value;
 		}
 
-		switch (partType) {
-			case STARTING_WITH:
-				return (ValueFunction<String>) escaper -> escaper.escape(value.toString()) + "%";
-			case ENDING_WITH:
-				return (ValueFunction<String>) escaper -> "%" + escaper.escape(value.toString());
-			case CONTAINING:
-			case NOT_CONTAINING:
-				return (ValueFunction<String>) escaper -> "%" + escaper.escape(value.toString()) + "%";
-			default:
-				return value;
-		}
+		return switch (partType) {
+			case STARTING_WITH -> (ValueFunction<String>) escaper -> escaper.escape(value.toString()) + "%";
+			case ENDING_WITH -> (ValueFunction<String>) escaper -> "%" + escaper.escape(value.toString());
+			case CONTAINING, NOT_CONTAINING -> (ValueFunction<String>) escaper -> "%" + escaper.escape(value.toString())
+					+ "%";
+			default -> value;
+		};
 	}
 }

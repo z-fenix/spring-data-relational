@@ -73,12 +73,13 @@ abstract class RowDocumentExtractorSupport {
 	protected static class AggregateContext<RS> {
 
 		private final TabularResultAdapter<RS> adapter;
-		final RelationalMappingContext context;
-		final PathToColumnMapping propertyToColumn;
+		private final RelationalMappingContext context;
+		private final PathToColumnMapping propertyToColumn;
 		private final Map<String, Integer> columnMap;
 
 		protected AggregateContext(TabularResultAdapter<RS> adapter, RelationalMappingContext context,
 				PathToColumnMapping propertyToColumn, Map<String, Integer> columnMap) {
+
 			this.adapter = adapter;
 			this.context = context;
 			this.propertyToColumn = propertyToColumn;
@@ -174,15 +175,28 @@ abstract class RowDocumentExtractorSupport {
 		private final AggregateContext<RS> aggregateContext;
 		private final RelationalPersistentEntity<?> entity;
 		private final AggregatePath basePath;
-
 		private RowDocument result;
+
+		private String keyColumnName;
+
+		private @Nullable Object key;
 		private final Map<RelationalPersistentProperty, TabularSink<RS>> readerState = new LinkedHashMap<>();
 
 		public RowDocumentSink(AggregateContext<RS> aggregateContext, RelationalPersistentEntity<?> entity,
 				AggregatePath basePath) {
+
 			this.aggregateContext = aggregateContext;
 			this.entity = entity;
 			this.basePath = basePath;
+
+			String keyColumnName;
+			if (entity.hasIdProperty()) {
+				keyColumnName = aggregateContext.getColumnName(basePath.append(entity.getRequiredIdProperty()));
+			} else {
+				keyColumnName = aggregateContext.getColumnName(basePath);
+			}
+
+			this.keyColumnName = keyColumnName;
 		}
 
 		@Override
@@ -206,17 +220,31 @@ abstract class RowDocumentExtractorSupport {
 		 */
 		private void readFirstRow(RS row, RowDocument document) {
 
+			// key marker
+			if (aggregateContext.containsColumn(keyColumnName)) {
+				key = aggregateContext.getObject(row, keyColumnName);
+			}
+
+			readEntity(row, document, basePath, entity);
+		}
+
+		private void readEntity(RS row, RowDocument document, AggregatePath basePath,
+				RelationalPersistentEntity<?> entity) {
+
 			for (RelationalPersistentProperty property : entity) {
 
 				AggregatePath path = basePath.append(property);
 
-				if (property.isQualified()) {
+				if (property.isEntity() && !property.isEmbedded() && (property.isCollectionLike() || property.isQualified())) {
+
 					readerState.put(property, new ContainerSink<>(aggregateContext, property, path));
 					continue;
 				}
 
 				if (property.isEmbedded()) {
-					collectEmbeddedValues(row, document, property, path);
+
+					RelationalPersistentEntity<?> embeddedEntity = aggregateContext.getRequiredPersistentEntity(property);
+					readEntity(row, document, path, embeddedEntity);
 					continue;
 				}
 
@@ -262,7 +290,7 @@ abstract class RowDocumentExtractorSupport {
 				}
 			}
 
-			return !result.isEmpty();
+			return !(result.isEmpty() && key == null);
 		}
 
 		@Override
@@ -280,6 +308,7 @@ abstract class RowDocumentExtractorSupport {
 
 		@Override
 		void reset() {
+
 			result = null;
 			readerState.clear();
 		}
@@ -298,6 +327,7 @@ abstract class RowDocumentExtractorSupport {
 		private @Nullable Object value;
 
 		public SingleColumnSink(AggregateContext<RS> aggregateContext, AggregatePath path) {
+
 			this.aggregateContext = aggregateContext;
 			this.columnName = path.getColumnInfo().name().getReference();
 		}
@@ -403,6 +433,7 @@ abstract class RowDocumentExtractorSupport {
 		public Object getResult() {
 
 			if (componentReader.hasResult()) {
+
 				container.add(this.key, componentReader.getResult());
 				componentReader.reset();
 			}

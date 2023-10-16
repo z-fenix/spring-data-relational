@@ -24,7 +24,6 @@ import java.io.IOException;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -34,10 +33,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.data.jdbc.core.convert.BasicJdbcConverter;
 import org.springframework.data.jdbc.core.convert.JdbcConverter;
+import org.springframework.data.jdbc.core.convert.MappingJdbcConverter;
 import org.springframework.data.jdbc.core.mapping.JdbcMappingContext;
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
+import org.springframework.data.jdbc.testing.DatabaseType;
+import org.springframework.data.jdbc.testing.EnabledOnDatabase;
+import org.springframework.data.jdbc.testing.IntegrationTest;
+import org.springframework.data.jdbc.testing.TestClass;
 import org.springframework.data.jdbc.testing.TestConfiguration;
 import org.springframework.data.relational.core.dialect.HsqlDbDialect;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
@@ -55,11 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Jens Schauder
  * @author Tyler Van Gorder
  */
-@ContextConfiguration
-@ActiveProfiles("hsql")
-@Transactional
-@ExtendWith(SpringExtension.class)
-@Disabled("Temporary disabled because no mybatis-spring release compatible with the current Spring Framework 6 release is available. See https://github.com/mybatis/spring/pull/663")
+@IntegrationTest
+@EnabledOnDatabase(DatabaseType.HSQL)
 public class MyBatisCustomizingNamespaceHsqlIntegrationTests {
 
 	@Autowired SqlSessionFactory sqlSessionFactory;
@@ -86,8 +86,8 @@ public class MyBatisCustomizingNamespaceHsqlIntegrationTests {
 	static class Config {
 
 		@Bean
-		Class<?> testClass() {
-			return MyBatisCustomizingNamespaceHsqlIntegrationTests.class;
+		TestClass testClass() {
+			return TestClass.of(MyBatisCustomizingNamespaceHsqlIntegrationTests.class);
 		}
 
 		@Bean
@@ -116,7 +116,7 @@ public class MyBatisCustomizingNamespaceHsqlIntegrationTests {
 		MyBatisDataAccessStrategy dataAccessStrategy(SqlSession sqlSession) {
 
 			RelationalMappingContext context = new JdbcMappingContext();
-			JdbcConverter converter = new BasicJdbcConverter(context, (Identifier, path) -> null);
+			JdbcConverter converter = new MappingJdbcConverter(context, (Identifier, path) -> null);
 
 			MyBatisDataAccessStrategy strategy = new MyBatisDataAccessStrategy(sqlSession,
 					HsqlDbDialect.INSTANCE.getIdentifierProcessing());

@@ -19,7 +19,6 @@ import static java.util.Arrays.*;
 import static java.util.Collections.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.assertj.core.api.SoftAssertions.*;
-import static org.springframework.test.context.TestExecutionListeners.MergeMode.*;
 
 import java.io.IOException;
 import java.sql.ResultSet;
@@ -39,7 +38,6 @@ import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -53,17 +51,22 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Example;
+import org.springframework.data.domain.ExampleMatcher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Window;
 import org.springframework.data.jdbc.core.mapping.AggregateReference;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.jdbc.repository.support.JdbcRepositoryFactory;
-import org.springframework.data.jdbc.testing.AssumeFeatureTestExecutionListener;
+import org.springframework.data.jdbc.testing.ConditionalOnDatabase;
+import org.springframework.data.jdbc.testing.DatabaseType;
 import org.springframework.data.jdbc.testing.EnabledOnFeature;
+import org.springframework.data.jdbc.testing.IntegrationTest;
 import org.springframework.data.jdbc.testing.TestConfiguration;
 import org.springframework.data.jdbc.testing.TestDatabaseFeatures;
 import org.springframework.data.relational.core.mapping.Column;
@@ -77,19 +80,19 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.ListCrudRepository;
 import org.springframework.data.repository.core.NamedQueries;
 import org.springframework.data.repository.core.support.PropertiesBasedNamedQueries;
+import org.springframework.data.repository.core.support.RepositoryFactoryCustomizer;
 import org.springframework.data.repository.query.ExtensionAwareQueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.FluentQuery;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.query.QueryByExampleExecutor;
+import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.spel.spi.EvaluationContextExtension;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.support.WindowIterator;
+import org.springframework.data.util.Streamable;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.lang.Nullable;
-import org.springframework.test.context.TestExecutionListeners;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.jdbc.JdbcTestUtils;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Very simple use cases for creation and usage of JdbcRepositories.
@@ -101,9 +104,7 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Christopher Klein
  * @author Mikhail Polivakha
  */
-@Transactional
-@TestExecutionListeners(value = AssumeFeatureTestExecutionListener.class, mergeMode = MERGE_WITH_DEFAULTS)
-@ExtendWith(SpringExtension.class)
+@IntegrationTest
 public class JdbcRepositoryIntegrationTests {
 
 	@Autowired NamedParameterJdbcTemplate template;
@@ -134,7 +135,7 @@ public class JdbcRepositoryIntegrationTests {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 
-		assertThat(JdbcTestUtils.countRowsInTableWhere((JdbcTemplate) template.getJdbcOperations(), "dummy_entity",
+		assertThat(JdbcTestUtils.countRowsInTableWhere(template.getJdbcOperations(), "dummy_entity",
 				"id_Prop = " + entity.getIdProp())).isEqualTo(1);
 	}
 
@@ -470,7 +471,7 @@ public class JdbcRepositoryIntegrationTests {
 	}
 
 	@Test // GH-945
-	@EnabledOnFeature(TestDatabaseFeatures.Feature.IS_POSTGRES)
+	@ConditionalOnDatabase(DatabaseType.POSTGRES)
 	public void usePrimitiveArrayAsArgument() {
 		assertThat(repository.unnestPrimitive(new int[] { 1, 2, 3 })).containsExactly(1, 2, 3);
 	}
@@ -562,7 +563,7 @@ public class JdbcRepositoryIntegrationTests {
 	}
 
 	@Test // GH-974
-	@EnabledOnFeature(TestDatabaseFeatures.Feature.IS_POSTGRES)
+	@ConditionalOnDatabase(DatabaseType.POSTGRES)
 	void intervalCalculation() {
 
 		repository.updateWithIntervalCalculation(23L, LocalDateTime.now());
@@ -1073,8 +1074,6 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
 
-		final DummyEntity one = repository.save(createDummyEntity());
-
 		DummyEntity two = createDummyEntity();
 
 		two.setName(searchName);
@@ -1099,6 +1098,42 @@ public class JdbcRepositoryIntegrationTests {
 
 		List<DummyEntity> matches = repository.findBy(example, p -> p.sortBy(Sort.by("pointInTime").descending()).all());
 		assertThat(matches).containsExactly(two, third);
+	}
+
+	@Test // GH-1609
+	void findByScrollPosition() {
+
+		DummyEntity one = new DummyEntity("one");
+		one.setFlag(true);
+
+		DummyEntity two = new DummyEntity("two");
+		two.setFlag(true);
+
+		DummyEntity three = new DummyEntity("three");
+		three.setFlag(true);
+
+		DummyEntity four = new DummyEntity("four");
+		four.setFlag(false);
+
+		repository.saveAll(Arrays.asList(one, two, three, four));
+
+		Example<DummyEntity> example = Example.of(one, ExampleMatcher.matching().withIgnorePaths("name", "idProp"));
+
+		Window<DummyEntity> first = repository.findBy(example, q -> q.limit(2).sortBy(Sort.by("name")))
+				.scroll(ScrollPosition.offset());
+		assertThat(first.map(DummyEntity::getName)).containsExactly("one", "three");
+
+		Window<DummyEntity> second = repository.findBy(example, q -> q.limit(2).sortBy(Sort.by("name")))
+				.scroll(ScrollPosition.offset(2));
+		assertThat(second.map(DummyEntity::getName)).containsExactly("two");
+
+		WindowIterator<DummyEntity> iterator = WindowIterator.of(
+				scrollPosition -> repository.findBy(example, q -> q.limit(2).sortBy(Sort.by("name")).scroll(scrollPosition)))
+				.startingAt(ScrollPosition.offset());
+
+		List<String> result = Streamable.of(() -> iterator).stream().map(DummyEntity::getName).toList();
+
+		assertThat(result).hasSize(3).containsExactly("one", "three", "two");
 	}
 
 	@Test // GH-1192
@@ -1391,11 +1426,6 @@ public class JdbcRepositoryIntegrationTests {
 		@Autowired JdbcRepositoryFactory factory;
 
 		@Bean
-		Class<?> testClass() {
-			return JdbcRepositoryIntegrationTests.class;
-		}
-
-		@Bean
 		DummyEntityRepository dummyEntityRepository() {
 			return factory.getRepository(DummyEntityRepository.class);
 		}
@@ -1425,13 +1455,13 @@ public class JdbcRepositoryIntegrationTests {
 		}
 
 		@Bean
-		public ExtensionAwareQueryMethodEvaluationContextProvider extensionAware(List<EvaluationContextExtension> exts) {
-			ExtensionAwareQueryMethodEvaluationContextProvider extensionAwareQueryMethodEvaluationContextProvider = new ExtensionAwareQueryMethodEvaluationContextProvider(
-					exts);
+		public QueryMethodEvaluationContextProvider extensionAware(List<EvaluationContextExtension> exts) {
+			return new ExtensionAwareQueryMethodEvaluationContextProvider(exts);
+		}
 
-			factory.setEvaluationContextProvider(extensionAwareQueryMethodEvaluationContextProvider);
-
-			return extensionAwareQueryMethodEvaluationContextProvider;
+		@Bean
+		RepositoryFactoryCustomizer customizer(QueryMethodEvaluationContextProvider provider) {
+			return repositoryFactory -> repositoryFactory.setEvaluationContextProvider(provider);
 		}
 
 		@Bean
@@ -1474,26 +1504,23 @@ public class JdbcRepositoryIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof Root))
+			if (!(o instanceof final Root other))
 				return false;
-			final Root other = (Root) o;
 			final Object this$id = this.getId();
 			final Object other$id = other.getId();
-			if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			if (!Objects.equals(this$id, other$id))
 				return false;
 			final Object this$name = this.getName();
 			final Object other$name = other.getName();
-			if (this$name == null ? other$name != null : !this$name.equals(other$name))
+			if (!Objects.equals(this$name, other$name))
 				return false;
 			final Object this$intermediate = this.getIntermediate();
 			final Object other$intermediate = other.getIntermediate();
-			if (this$intermediate == null ? other$intermediate != null : !this$intermediate.equals(other$intermediate))
+			if (!Objects.equals(this$intermediate, other$intermediate))
 				return false;
 			final Object this$intermediates = this.getIntermediates();
 			final Object other$intermediates = other.getIntermediates();
-			if (this$intermediates == null ? other$intermediates != null : !this$intermediates.equals(other$intermediates))
-				return false;
-			return true;
+			return Objects.equals(this$intermediates, other$intermediates);
 		}
 
 		public int hashCode() {
@@ -1580,26 +1607,23 @@ public class JdbcRepositoryIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof Intermediate))
+			if (!(o instanceof final Intermediate other))
 				return false;
-			final Intermediate other = (Intermediate) o;
 			final Object this$id = this.getId();
 			final Object other$id = other.getId();
-			if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			if (!Objects.equals(this$id, other$id))
 				return false;
 			final Object this$name = this.getName();
 			final Object other$name = other.getName();
-			if (this$name == null ? other$name != null : !this$name.equals(other$name))
+			if (!Objects.equals(this$name, other$name))
 				return false;
 			final Object this$leaf = this.getLeaf();
 			final Object other$leaf = other.getLeaf();
-			if (this$leaf == null ? other$leaf != null : !this$leaf.equals(other$leaf))
+			if (!Objects.equals(this$leaf, other$leaf))
 				return false;
 			final Object this$leaves = this.getLeaves();
 			final Object other$leaves = other.getLeaves();
-			if (this$leaves == null ? other$leaves != null : !this$leaves.equals(other$leaves))
-				return false;
-			return true;
+			return Objects.equals(this$leaves, other$leaves);
 		}
 
 		public int hashCode() {
@@ -1643,18 +1667,15 @@ public class JdbcRepositoryIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof Leaf))
+			if (!(o instanceof final Leaf other))
 				return false;
-			final Leaf other = (Leaf) o;
 			final Object this$id = this.getId();
 			final Object other$id = other.getId();
-			if (this$id == null ? other$id != null : !this$id.equals(other$id))
+			if (!Objects.equals(this$id, other$id))
 				return false;
 			final Object this$name = this.getName();
 			final Object other$name = other.getName();
-			if (this$name == null ? other$name != null : !this$name.equals(other$name))
-				return false;
-			return true;
+			return Objects.equals(this$name, other$name);
 		}
 
 		public int hashCode() {
@@ -1698,6 +1719,7 @@ public class JdbcRepositoryIntegrationTests {
 			}
 		}
 
+		@Override
 		public Object getRootObject() {
 			return new ExtensionRoot();
 		}
@@ -1777,10 +1799,14 @@ public class JdbcRepositoryIntegrationTests {
 
 		@Override
 		public boolean equals(Object o) {
-			if (this == o) return true;
-			if (o == null || getClass() != o.getClass()) return false;
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
 			DummyEntity that = (DummyEntity) o;
-			return flag == that.flag && Objects.equals(name, that.name) && Objects.equals(pointInTime, that.pointInTime) && Objects.equals(offsetDateTime, that.offsetDateTime) && Objects.equals(idProp, that.idProp) && Objects.equals(ref, that.ref) && direction == that.direction;
+			return flag == that.flag && Objects.equals(name, that.name) && Objects.equals(pointInTime, that.pointInTime)
+					&& Objects.equals(offsetDateTime, that.offsetDateTime) && Objects.equals(idProp, that.idProp)
+					&& Objects.equals(ref, that.ref) && direction == that.direction;
 		}
 
 		@Override
@@ -1811,14 +1837,11 @@ public class JdbcRepositoryIntegrationTests {
 		public boolean equals(final Object o) {
 			if (o == this)
 				return true;
-			if (!(o instanceof DtoProjection))
+			if (!(o instanceof final DtoProjection other))
 				return false;
-			final DtoProjection other = (DtoProjection) o;
 			final Object this$name = this.getName();
 			final Object other$name = other.getName();
-			if (this$name == null ? other$name != null : !this$name.equals(other$name))
-				return false;
-			return true;
+			return Objects.equals(this$name, other$name);
 		}
 
 		public int hashCode() {

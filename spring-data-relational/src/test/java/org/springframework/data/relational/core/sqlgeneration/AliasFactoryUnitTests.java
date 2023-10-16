@@ -34,7 +34,7 @@ class AliasFactoryUnitTests {
 
 	@Nested
 	class SimpleAlias {
-		@Test
+		@Test // GH-1446
 		void aliasForRoot() {
 
 			String alias = aliasFactory
@@ -43,7 +43,7 @@ class AliasFactoryUnitTests {
 			assertThat(alias).isEqualTo("c_dummy_entity_1");
 		}
 
-		@Test
+		@Test // GH-1446
 		void aliasSimpleProperty() {
 
 			String alias = aliasFactory
@@ -52,8 +52,8 @@ class AliasFactoryUnitTests {
 			assertThat(alias).isEqualTo("c_name_1");
 		}
 
-		@Test
-		void nameGetsSanatized() {
+		@Test // GH-1446
+		void nameGetsSanitized() {
 
 			String alias = aliasFactory.getColumnAlias(
 					context.getAggregatePath( context.getPersistentPropertyPath("evil", DummyEntity.class)));
@@ -61,7 +61,7 @@ class AliasFactoryUnitTests {
 			assertThat(alias).isEqualTo("c_ameannamecontains3illegal_characters_1");
 		}
 
-		@Test
+		@Test // GH-1446
 		void aliasIsStable() {
 
 			String alias1 = aliasFactory.getColumnAlias(
@@ -76,7 +76,7 @@ class AliasFactoryUnitTests {
 	@Nested
 	class RnAlias {
 
-		@Test
+		@Test // GH-1446
 		void aliasIsStable() {
 
 			String alias1 = aliasFactory.getRowNumberAlias(
@@ -87,7 +87,7 @@ class AliasFactoryUnitTests {
 			assertThat(alias1).isEqualTo(alias2);
 		}
 
-		@Test
+		@Test // GH-1446
 		void aliasProjectsOnTableReferencingPath() {
 
 			String alias1 = aliasFactory.getRowNumberAlias(
@@ -99,7 +99,7 @@ class AliasFactoryUnitTests {
 			assertThat(alias1).isEqualTo(alias2);
 		}
 
-		@Test
+		@Test // GH-1446
 		void rnAliasIsIndependentOfTableAlias() {
 
 			String alias1 = aliasFactory.getRowNumberAlias(
@@ -114,7 +114,7 @@ class AliasFactoryUnitTests {
 
 	@Nested
 	class BackReferenceAlias {
-		@Test
+		@Test // GH-1446
 		void testBackReferenceAlias() {
 
 			String alias = aliasFactory.getBackReferenceAlias(
@@ -126,13 +126,28 @@ class AliasFactoryUnitTests {
 
 	@Nested
 	class KeyAlias {
-		@Test
+		@Test // GH-1446
 		void testKeyAlias() {
 
 			String alias = aliasFactory.getKeyAlias(
 					context.getAggregatePath(context.getPersistentPropertyPath("dummy", Reference.class)));
 
 			assertThat(alias).isEqualTo("key_dummy_entity_1");
+		}
+	}
+
+	@Nested
+	class TableAlias {
+		@Test // GH-1448
+		void tableAliasIsDifferentForDifferentPathsToSameEntity() {
+
+			String alias = aliasFactory.getTableAlias(
+					context.getAggregatePath(context.getPersistentPropertyPath("dummy", Reference.class)));
+
+			String alias2 = aliasFactory.getTableAlias(
+					context.getAggregatePath(context.getPersistentPropertyPath("dummy2", Reference.class)));
+
+			assertThat(alias).isNotEqualTo(alias2);
 		}
 	}
 
@@ -144,5 +159,6 @@ class AliasFactoryUnitTests {
 
 	static class Reference {
 		DummyEntity dummy;
+		DummyEntity dummy2;
 	}
 }

@@ -31,6 +31,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.jdbc.core.convert.*;
 import org.springframework.data.jdbc.core.dialect.JdbcDialect;
@@ -67,6 +69,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 @ComponentScan // To pick up configuration classes (per activated profile)
 public class TestConfiguration {
 
+	public static final String PROFILE_SINGLE_QUERY_LOADING = "singleQueryLoading";
+	public static final String PROFILE_NO_SINGLE_QUERY_LOADING = "!" + PROFILE_SINGLE_QUERY_LOADING;
+
 	@Autowired DataSource dataSource;
 	@Autowired BeanFactory beanFactory;
 	@Autowired ApplicationEventPublisher publisher;
@@ -88,6 +93,7 @@ public class TestConfiguration {
 	}
 
 	@Bean
+	@Primary
 	NamedParameterJdbcOperations namedParameterJdbcTemplate() {
 		return new NamedParameterJdbcTemplate(dataSource);
 	}
@@ -104,14 +110,24 @@ public class TestConfiguration {
 
 		return new DataAccessStrategyFactory(new SqlGeneratorSource(context, converter, dialect), converter,
 				template, new SqlParametersFactory(context, converter),
-				new InsertStrategyFactory(template, new BatchJdbcOperations(template.getJdbcOperations()), dialect)).create();
+				new InsertStrategyFactory(template, dialect)).create();
 	}
 
-	@Bean
-	JdbcMappingContext jdbcMappingContext(Optional<NamingStrategy> namingStrategy, CustomConversions conversions) {
+	@Bean("jdbcMappingContext")
+	@Profile(PROFILE_NO_SINGLE_QUERY_LOADING)
+	JdbcMappingContext jdbcMappingContextWithOutSingleQueryLoading(Optional<NamingStrategy> namingStrategy, CustomConversions conversions) {
 
 		JdbcMappingContext mappingContext = new JdbcMappingContext(namingStrategy.orElse(DefaultNamingStrategy.INSTANCE));
 		mappingContext.setSimpleTypeHolder(conversions.getSimpleTypeHolder());
+		return mappingContext;
+	}
+	@Bean("jdbcMappingContext")
+	@Profile(PROFILE_SINGLE_QUERY_LOADING)
+	JdbcMappingContext jdbcMappingContextWithSingleQueryLoading(Optional<NamingStrategy> namingStrategy, CustomConversions conversions) {
+
+		JdbcMappingContext mappingContext = new JdbcMappingContext(namingStrategy.orElse(DefaultNamingStrategy.INSTANCE));
+		mappingContext.setSimpleTypeHolder(conversions.getSimpleTypeHolder());
+		mappingContext.setSingleQueryLoadingEnabled(true);
 		return mappingContext;
 	}
 
@@ -141,12 +157,11 @@ public class TestConfiguration {
 		JdbcArrayColumns arrayColumns = dialect instanceof JdbcDialect ? ((JdbcDialect) dialect).getArraySupport()
 				: JdbcArrayColumns.DefaultSupport.INSTANCE;
 
-		return new BasicJdbcConverter( //
+		return new MappingJdbcConverter( //
 				mappingContext, //
 				relationResolver, //
 				conversions, //
-				new DefaultJdbcTypeFactory(template.getJdbcOperations(), arrayColumns), //
-				dialect.getIdentifierProcessing());
+				new DefaultJdbcTypeFactory(template.getJdbcOperations(), arrayColumns));
 	}
 
 	@Bean

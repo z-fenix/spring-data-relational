@@ -22,7 +22,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * {@code @RequiredFeature} is used to signal that the annotated test class or test method is only <em>enabled</em> on
+ * {@code @RequiredFeature} is used to express that the annotated test class or test method is only <em>enabled</em> on
  * one or more specified Spring Data JDBC {@link org.springframework.data.jdbc.testing.TestDatabaseFeatures.Feature
  * features} are supported by the underlying database.
  * <p>
@@ -33,8 +33,6 @@ import java.lang.annotation.Target;
  * Rather, it prevents the execution of the test method and method-level lifecycle callbacks such as {@code @BeforeEach}
  * methods, {@code @AfterEach} methods, and corresponding extension APIs. When annotated on method and class level, all
  * annotated features must match to run a test.
- * <p>
- * This annotation cannot be used as meta-annotation.
  *
  * @author Jens Schauder
  * @author Mark Paluch

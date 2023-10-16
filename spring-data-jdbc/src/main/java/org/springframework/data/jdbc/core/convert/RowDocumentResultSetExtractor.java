@@ -15,6 +15,7 @@
  */
 package org.springframework.data.jdbc.core.convert;
 
+import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -37,28 +38,61 @@ import org.springframework.util.LinkedCaseInsensitiveMap;
  * {@link ResultSet}-driven extractor to extract {@link RowDocument documents}.
  *
  * @author Mark Paluch
+ * @author Jens Schauder
  * @since 3.2
  */
-class ResultSetRowDocumentExtractor {
+class RowDocumentResultSetExtractor {
 
 	private final RelationalMappingContext context;
 	private final PathToColumnMapping propertyToColumn;
 
-	ResultSetRowDocumentExtractor(RelationalMappingContext context, PathToColumnMapping propertyToColumn) {
+	RowDocumentResultSetExtractor(RelationalMappingContext context, PathToColumnMapping propertyToColumn) {
+
 		this.context = context;
 		this.propertyToColumn = propertyToColumn;
+	}
+
+	/**
+	 * Create a {@link RowDocument} from the current {@link ResultSet} row.
+	 *
+	 * @param resultSet must not be {@literal null}.
+	 * @return
+	 * @throws SQLException
+	 */
+	static RowDocument toRowDocument(ResultSet resultSet) throws SQLException {
+
+		ResultSetMetaData md = resultSet.getMetaData();
+		int columnCount = md.getColumnCount();
+		RowDocument document = new RowDocument(columnCount);
+
+		for (int i = 0; i < columnCount; i++) {
+			Object rsv = JdbcUtils.getResultSetValue(resultSet, i + 1);
+			String columnName = md.getColumnLabel(i + 1);
+			document.put(columnName, rsv instanceof Array a ? a.getArray() : rsv);
+		}
+
+		return document;
 	}
 
 	/**
 	 * Adapter to extract values and column metadata from a {@link ResultSet}.
 	 */
 	enum ResultSetAdapter implements TabularResultAdapter<ResultSet> {
+
 		INSTANCE;
 
 		@Override
 		public Object getObject(ResultSet row, int index) {
+
 			try {
-				return JdbcUtils.getResultSetValue(row, index);
+
+				Object resultSetValue = JdbcUtils.getResultSetValue(row, index);
+
+				if (resultSetValue instanceof Array a) {
+					return a.getArray();
+				}
+
+				return resultSetValue;
 			} catch (SQLException e) {
 				throw new DataRetrievalFailureException("Cannot retrieve column " + index + " from ResultSet", e);
 			}
@@ -68,6 +102,7 @@ class ResultSetRowDocumentExtractor {
 		public Map<String, Integer> getColumnMap(ResultSet result) {
 
 			try {
+
 				ResultSetMetaData metaData = result.getMetaData();
 				Map<String, Integer> columns = new LinkedCaseInsensitiveMap<>(metaData.getColumnCount());
 
@@ -141,18 +176,15 @@ class ResultSetRowDocumentExtractor {
 		private final Integer identifierIndex;
 		private final AggregateContext<ResultSet> aggregateContext;
 
-		private final boolean initiallyConsumed;
+		/**
+		 * Answers the question if the internal {@link ResultSet} points at an actual row.
+		 */
 		private boolean hasNext;
 
-		RowDocumentIterator(RelationalPersistentEntity<?> entity, ResultSet resultSet) throws SQLException {
+		RowDocumentIterator(RelationalPersistentEntity<?> entity, ResultSet resultSet) {
 
 			ResultSetAdapter adapter = ResultSetAdapter.INSTANCE;
 
-			if (resultSet.isBeforeFirst()) {
-				hasNext = resultSet.next();
-			}
-
-			this.initiallyConsumed = resultSet.isAfterLast();
 			this.rootPath = context.getAggregatePath(entity);
 			this.rootEntity = entity;
 
@@ -162,15 +194,50 @@ class ResultSetRowDocumentExtractor {
 
 			this.resultSet = resultSet;
 			this.identifierIndex = columns.get(idColumn);
+			this.hasNext = hasRow(resultSet);
+		}
+
+		private static boolean hasRow(ResultSet resultSet) {
+
+			// If we are before the first row we need to advance to the first row.
+			try {
+				if (resultSet.isBeforeFirst()) {
+					return resultSet.next();
+				}
+			} catch (SQLException e) {
+				// seems that isBeforeFirst is not implemented
+			}
+
+			// if we are after the last row we are done and not pointing a valid row and also can't advance to one.
+			try {
+				if (resultSet.isAfterLast()) {
+					return false;
+				}
+			} catch (SQLException e) {
+				// seems that isAfterLast is not implemented
+			}
+
+			// if we arrived here we know almost nothing.
+			// maybe isBeforeFirst or isBeforeLast aren't implemented
+			// or the ResultSet is empty.
+
+			try {
+				resultSet.getObject(1);
+				// we can see actual data, so we are looking at a current row.
+				return true;
+			} catch (SQLException ignored) {}
+
+			try {
+				return resultSet.next();
+			} catch (SQLException e) {
+				// we aren't looking at a row, but we can't advance either.
+				// so it seems we are facing an empty ResultSet
+				return false;
+			}
 		}
 
 		@Override
 		public boolean hasNext() {
-
-			if (initiallyConsumed) {
-				return false;
-			}
-
 			return hasNext;
 		}
 
@@ -182,6 +249,7 @@ class ResultSetRowDocumentExtractor {
 			Object key = ResultSetAdapter.INSTANCE.getObject(resultSet, identifierIndex);
 
 			try {
+
 				do {
 					Object nextKey = ResultSetAdapter.INSTANCE.getObject(resultSet, identifierIndex);
 
@@ -199,5 +267,4 @@ class ResultSetRowDocumentExtractor {
 			return reader.getResult();
 		}
 	}
-
 }

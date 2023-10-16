@@ -22,7 +22,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jdbc.core.mapping.JdbcValue;
@@ -34,7 +33,6 @@ import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.data.mapping.context.InvalidPersistentPropertyPath;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.relational.core.dialect.Dialect;
-import org.springframework.data.relational.core.dialect.Escaper;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.query.CriteriaDefinition;
@@ -60,7 +58,6 @@ import org.springframework.util.ClassUtils;
 public class QueryMapper {
 
 	private final JdbcConverter converter;
-	private final Dialect dialect;
 	private final MappingContext<? extends RelationalPersistentEntity<?>, RelationalPersistentProperty> mappingContext;
 
 	/**
@@ -68,16 +65,29 @@ public class QueryMapper {
 	 *
 	 * @param dialect must not be {@literal null}.
 	 * @param converter must not be {@literal null}.
+	 * @deprecated use {@link QueryMapper(JdbcConverter)} instead.
 	 */
-	@SuppressWarnings({ "unchecked", "rawtypes" })
+	@Deprecated(since="3.2")
 	public QueryMapper(Dialect dialect, JdbcConverter converter) {
 
 		Assert.notNull(dialect, "Dialect must not be null");
 		Assert.notNull(converter, "JdbcConverter must not be null");
 
 		this.converter = converter;
-		this.dialect = dialect;
-		this.mappingContext = (MappingContext) converter.getMappingContext();
+		this.mappingContext = converter.getMappingContext();
+	}
+
+	/**
+	 * Creates a new {@link QueryMapper} with the given {@link JdbcConverter}.
+	 *
+	 * @param converter must not be {@literal null}.
+	 */
+	public QueryMapper( JdbcConverter converter) {
+
+		Assert.notNull(converter, "JdbcConverter must not be null");
+
+		this.converter = converter;
+		this.mappingContext = converter.getMappingContext();
 	}
 
 	/**
@@ -295,16 +305,13 @@ public class QueryMapper {
 
 			mappedValue = convertValue(comparator, settableValue.getValue(), propertyField.getTypeHint());
 			sqlType = getTypeHint(mappedValue, actualType.getType(), settableValue);
-		} else if (criteria.getValue() instanceof ValueFunction) {
+		} else if (criteria.getValue() instanceof ValueFunction valueFunction) {
 
-			ValueFunction<Object> valueFunction = (ValueFunction<Object>) criteria.getValue();
-			Object value = valueFunction.apply(getEscaper(comparator));
-
-			mappedValue = convertValue(comparator, value, propertyField.getTypeHint());
+			mappedValue = valueFunction.map(v -> convertValue(comparator, v, propertyField.getTypeHint()));
 			sqlType = propertyField.getSqlType();
 
-		} else if (propertyField instanceof MetadataBackedField //
-				&& ((MetadataBackedField) propertyField).property != null //
+		} else if (propertyField instanceof MetadataBackedField metadataBackedField //
+				&& metadataBackedField.property != null //
 				&& (criteria.getValue() == null || !criteria.getValue().getClass().isArray())) {
 
 			RelationalPersistentProperty property = ((MetadataBackedField) propertyField).property;
@@ -413,7 +420,7 @@ public class QueryMapper {
 		Condition condition = null;
 		for (RelationalPersistentProperty nestedProperty : persistentEntity) {
 
-			SqlIdentifier sqlIdentifier = nestedProperty.getColumnName().transform(prefix::concat);
+			SqlIdentifier sqlIdentifier = nestedProperty.getColumnName();
 			Object mappedNestedValue = convertValue(embeddedAccessor.getProperty(nestedProperty),
 					nestedProperty.getTypeInformation());
 			SQLType sqlType = converter.getTargetSqlType(nestedProperty);
@@ -429,15 +436,6 @@ public class QueryMapper {
 		}
 
 		return Conditions.nest(condition);
-	}
-
-	private Escaper getEscaper(Comparator comparator) {
-
-		if (comparator == Comparator.LIKE || comparator == Comparator.NOT_LIKE) {
-			return dialect.getLikeEscaper();
-		}
-
-		return Escaper.DEFAULT;
 	}
 
 	@Nullable
@@ -766,16 +764,6 @@ public class QueryMapper {
 
 			if (isEmbedded()) {
 				throw new IllegalStateException("Cannot obtain a single column name for embedded property");
-			}
-
-			if (this.property != null && this.path != null && this.path.getParentPath() != null) {
-
-				RelationalPersistentProperty owner = this.path.getParentPath().getLeafProperty();
-
-				if (owner != null && owner.isEmbedded()) {
-					return this.property.getColumnName()
-							.transform(it -> Objects.requireNonNull(owner.getEmbeddedPrefix()).concat(it));
-				}
 			}
 
 			return this.path == null || this.path.getLeafProperty() == null ? super.getMappedColumnName()

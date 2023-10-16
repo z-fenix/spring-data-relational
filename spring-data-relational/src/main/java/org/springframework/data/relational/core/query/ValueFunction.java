@@ -56,4 +56,20 @@ public interface ValueFunction<T> extends Function<Escaper, T> {
 
 		return () -> apply(escaper);
 	}
+
+	/**
+	 * Return a new ValueFunction applying the given mapping {@link Function}. The mapping function is applied after
+	 * applying {@link Escaper}.
+	 *
+	 * @param mapper the mapping function to apply to the value.
+	 * @param <R> the type of the value returned from the mapping function.
+	 * @return a new {@literal ValueFunction}.
+	 * @since 3.2
+	 */
+	default <R> ValueFunction<R> map(Function<T, R> mapper) {
+
+		Assert.notNull(mapper, "Mapping function must not be null");
+
+		return escaper -> mapper.apply(this.apply(escaper));
+	}
 }

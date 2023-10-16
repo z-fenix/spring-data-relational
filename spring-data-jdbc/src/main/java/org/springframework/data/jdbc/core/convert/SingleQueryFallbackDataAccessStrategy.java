@@ -16,9 +16,11 @@
 package org.springframework.data.jdbc.core.convert;
 
 import java.util.Collections;
+import java.util.Optional;
 
 import org.springframework.data.mapping.PersistentPropertyPath;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
+import org.springframework.data.relational.core.query.Query;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.util.Assert;
 
@@ -27,6 +29,7 @@ import org.springframework.util.Assert;
  * Query Loading.
  *
  * @author Mark Paluch
+ * @author Jens Schauder
  * @since 3.2
  */
 class SingleQueryFallbackDataAccessStrategy extends DelegatingDataAccessStrategy {
@@ -85,36 +88,58 @@ class SingleQueryFallbackDataAccessStrategy extends DelegatingDataAccessStrategy
 		return super.findAllById(ids, domainType);
 	}
 
-	private boolean isSingleSelectQuerySupported(Class<?> entityType) {
+	@Override
+	public <T> Optional<T> findOne(Query query, Class<T> domainType) {
 
-		return sqlGeneratorSource.getDialect().supportsSingleQueryLoading()//
-				&& entityQualifiesForSingleSelectQuery(entityType);
+		if (isSingleSelectQuerySupported(domainType) && isSingleSelectQuerySupported(query)) {
+			return singleSelectDelegate.findOne(query, domainType);
+		}
+
+		return super.findOne(query, domainType);
 	}
 
-	private boolean entityQualifiesForSingleSelectQuery(Class<?> entityType) {
+	@Override
+	public <T> Iterable<T> findAll(Query query, Class<T> domainType) {
 
-		boolean referenceFound = false;
+		if (isSingleSelectQuerySupported(domainType) && isSingleSelectQuerySupported(query)) {
+			return singleSelectDelegate.findAll(query, domainType);
+		}
+
+		return super.findAll(query, domainType);
+	}
+
+	private static boolean isSingleSelectQuerySupported(Query query) {
+		return !query.isSorted() && !query.isLimited();
+	}
+
+	private boolean isSingleSelectQuerySupported(Class<?> entityType) {
+
+		return converter.getMappingContext().isSingleQueryLoadingEnabled()
+				&& sqlGeneratorSource.getDialect().supportsSingleQueryLoading()//
+				&& entityQualifiesForSingleQueryLoading(entityType);
+	}
+
+	private boolean entityQualifiesForSingleQueryLoading(Class<?> entityType) {
+
 		for (PersistentPropertyPath<RelationalPersistentProperty> path : converter.getMappingContext()
 				.findPersistentPropertyPaths(entityType, __ -> true)) {
 			RelationalPersistentProperty property = path.getLeafProperty();
 			if (property.isEntity()) {
+
+				// single references are currently not supported
+				if (!(property.isMap() || property.isCollectionLike())) {
+					return false;
+				}
 
 				// embedded entities are currently not supported
 				if (property.isEmbedded()) {
 					return false;
 				}
 
-				// only a single reference is currently supported
-				if (referenceFound) {
+				// nested references are currently not supported
+				if (path.getLength() > 1) {
 					return false;
 				}
-
-				referenceFound = true;
-			}
-
-			// AggregateReferences aren't supported yet
-			if (property.isAssociation()) {
-				return false;
 			}
 		}
 		return true;

@@ -15,6 +15,10 @@
  */
 package org.springframework.data.relational.core.sqlgeneration;
 
+import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
+import org.springframework.data.relational.core.sql.Condition;
+import org.springframework.lang.Nullable;
+
 /**
  * Generates SQL statements for loading aggregates.
  *
@@ -22,11 +26,12 @@ package org.springframework.data.relational.core.sqlgeneration;
  * @since 3.2
  */
 public interface SqlGenerator {
-	String findAll();
 
-	String findById();
+	default String findAll(RelationalPersistentEntity<?> aggregate) {
+		return findAll(aggregate, null);
+	}
 
-	String findAllById();
+	String findAll(RelationalPersistentEntity<?> aggregate, @Nullable Condition condition);
 
 	AliasFactory getAliasFactory();
 }
