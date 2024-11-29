@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ class InVisitor extends TypedSingleConditionRenderSupport<In> {
 				part.append(", ");
 			}
 
-			if (part.length() == 0) {
+			if (part.isEmpty()) {
 				part.append(renderedPart);
 				if (notIn) {
 					part.append(" NOT");

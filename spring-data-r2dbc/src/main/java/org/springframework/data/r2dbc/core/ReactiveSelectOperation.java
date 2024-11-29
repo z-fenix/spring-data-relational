@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import org.springframework.data.relational.core.sql.SqlIdentifier;
  * <pre>
  *     <code>
  *         select(Human.class)
+ *             .withFetchSize(10)
  *             .from("star_wars")
  *             .as(Jedi.class)
  *             .matching(query(where("firstname").is("luke")))
@@ -44,6 +45,7 @@ import org.springframework.data.relational.core.sql.SqlIdentifier;
  * </pre>
  *
  * @author Mark Paluch
+ * @author Mikhail Polivakha
  * @since 1.1
  */
 public interface ReactiveSelectOperation {
@@ -114,6 +116,16 @@ public interface ReactiveSelectOperation {
 	 * Define a {@link Query} used as the filter for the {@code SELECT}.
 	 */
 	interface SelectWithQuery<T> extends TerminatingSelect<T> {
+
+		/**
+		 * Specifies the fetch size for this query.
+		 *
+		 * @param fetchSize
+		 * @return new instance of {@link SelectWithQuery}.
+		 * @since 3.4
+		 * @see io.r2dbc.spi.Statement#fetchSize(int)
+		 */
+		SelectWithQuery<T> withFetchSize(int fetchSize);
 
 		/**
 		 * Set the {@link Query} used as a filter in the {@code SELECT} statement.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ import org.springframework.data.mapping.PersistentPropertyPath;
 import org.springframework.data.relational.core.conversion.IdValueSource;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
-import org.springframework.data.relational.core.sql.IdentifierProcessing;
 
 /**
  * Unit tests for the {@link MyBatisDataAccessStrategy}, mainly ensuring that the correct statements get's looked up.
@@ -52,7 +51,7 @@ public class MyBatisDataAccessStrategyUnitTests {
 	SqlSession session = mock(SqlSession.class);
 	ArgumentCaptor<MyBatisContext> captor = ArgumentCaptor.forClass(MyBatisContext.class);
 
-	MyBatisDataAccessStrategy accessStrategy = new MyBatisDataAccessStrategy(session, IdentifierProcessing.ANSI);
+	MyBatisDataAccessStrategy accessStrategy = new MyBatisDataAccessStrategy(session);
 
 	PersistentPropertyPath<RelationalPersistentProperty> path = PersistentPropertyPathTestUtils.getPath("one.two",
 			DummyEntity.class, context);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.assertj.core.api.SoftAssertions.*;
 import static org.mockito.Mockito.*;
 
+import java.nio.ByteBuffer;
 import java.sql.Array;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -28,41 +29,53 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.jdbc.core.mapping.AggregateReference;
 import org.springframework.data.jdbc.core.mapping.JdbcMappingContext;
 import org.springframework.data.jdbc.core.mapping.JdbcValue;
 import org.springframework.data.jdbc.support.JdbcUtil;
+import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
+import org.springframework.data.relational.domain.RowDocument;
 import org.springframework.data.util.TypeInformation;
 
 /**
  * Unit tests for {@link MappingJdbcConverter}.
  *
  * @author Mark Paluch
+ * @author Jens Schauder
  */
-public class MappingJdbcConverterUnitTests {
+class MappingJdbcConverterUnitTests {
 
-	JdbcMappingContext context = new JdbcMappingContext();
-	StubbedJdbcTypeFactory typeFactory = new StubbedJdbcTypeFactory();
-	MappingJdbcConverter converter = new MappingJdbcConverter( //
+	private static final UUID UUID = java.util.UUID.fromString("87a48aa8-a071-705e-54a9-e52fe3a012f1");
+	private static final byte[] BYTES_REPRESENTING_UUID = { -121, -92, -118, -88, -96, 113, 112, 94, 84, -87, -27, 47,
+			-29,
+			-96, 18, -15 };
+
+	private JdbcMappingContext context = new JdbcMappingContext();
+	private StubbedJdbcTypeFactory typeFactory = new StubbedJdbcTypeFactory();
+	private MappingJdbcConverter converter = new MappingJdbcConverter( //
 			context, //
 			(identifier, path) -> {
 				throw new UnsupportedOperationException();
 			}, //
 			new JdbcCustomConversions(), //
-			typeFactory  //
+			typeFactory //
 	);
 
 	@Test // DATAJDBC-104, DATAJDBC-1384
-	public void testTargetTypesForPropertyType() {
+	void testTargetTypesForPropertyType() {
 
 		RelationalPersistentEntity<?> entity = context.getRequiredPersistentEntity(DummyEntity.class);
 
@@ -83,7 +96,7 @@ public class MappingJdbcConverterUnitTests {
 	}
 
 	@Test // DATAJDBC-259
-	public void classificationOfCollectionLikeProperties() {
+	void classificationOfCollectionLikeProperties() {
 
 		RelationalPersistentEntity<?> entity = context.getRequiredPersistentEntity(DummyEntity.class);
 
@@ -99,7 +112,7 @@ public class MappingJdbcConverterUnitTests {
 	}
 
 	@Test // DATAJDBC-221
-	public void referencesAreNotEntitiesAndGetStoredAsTheirId() {
+	void referencesAreNotEntitiesAndGetStoredAsTheirId() {
 
 		RelationalPersistentEntity<?> entity = context.getRequiredPersistentEntity(DummyEntity.class);
 
@@ -139,6 +152,50 @@ public class MappingJdbcConverterUnitTests {
 		assertThat(typeFactory.arraySource).containsExactly(1, 2, 3, 4, 5);
 	}
 
+	@Test // GH-1684
+	void accessesCorrectValuesForOneToOneRelationshipWithIdenticallyNamedIdProperties() {
+
+		RowDocument rowdocument = new RowDocument(Map.of("ID", "one", "REFERENCED_ID", 23));
+
+		WithOneToOne result = converter.readAndResolve(WithOneToOne.class, rowdocument);
+
+		assertThat(result).isEqualTo(new WithOneToOne("one", new Referenced(23L)));
+	}
+
+	@Test // GH-1750
+	void readByteArrayToNestedUuidWithCustomConverter() {
+
+		JdbcMappingContext context = new JdbcMappingContext();
+		StubbedJdbcTypeFactory typeFactory = new StubbedJdbcTypeFactory();
+		Converter<byte[], UUID> customConverter = new ByteArrayToUuid();
+		MappingJdbcConverter converter = new MappingJdbcConverter( //
+				context, //
+				(identifier, path) -> {
+					throw new UnsupportedOperationException();
+				}, //
+				new JdbcCustomConversions(Collections.singletonList(customConverter)), //
+				typeFactory //
+		);
+
+		assertSoftly(softly -> {
+			checkReadConversion(softly, converter, "uuidRef", AggregateReference.to(UUID));
+			checkReadConversion(softly, converter, "uuid", UUID);
+			checkReadConversion(softly, converter, "optionalUuid", Optional.of(UUID));
+		});
+
+	}
+
+	private static void checkReadConversion(SoftAssertions softly, MappingJdbcConverter converter, String propertyName,
+			Object expected) {
+
+		RelationalPersistentProperty property = converter.getMappingContext().getRequiredPersistentEntity(DummyEntity.class)
+				.getRequiredPersistentProperty(propertyName);
+		Object value = converter.readValue(BYTES_REPRESENTING_UUID, property.getTypeInformation() //
+		);
+
+		softly.assertThat(value).isEqualTo(expected);
+	}
+
 	private void checkConversionToTimestampAndBack(SoftAssertions softly, RelationalPersistentEntity<?> persistentEntity,
 			String propertyName, Object value) {
 
@@ -173,6 +230,8 @@ public class MappingJdbcConverterUnitTests {
 		private final Timestamp timestamp;
 		private final AggregateReference<DummyEntity, Long> reference;
 		private final UUID uuid;
+		private final AggregateReference<ReferencedByUuid, UUID> uuidRef;
+		private final Optional<UUID> optionalUuid;
 
 		// DATAJDBC-259
 		private final List<String> listOfString;
@@ -181,9 +240,10 @@ public class MappingJdbcConverterUnitTests {
 		private final OtherEntity[] arrayOfEntity;
 
 		private DummyEntity(Long id, SomeEnum someEnum, LocalDateTime localDateTime, LocalDate localDate,
-				LocalTime localTime, ZonedDateTime zonedDateTime, OffsetDateTime offsetDateTime, Instant instant, Date date,
-				Timestamp timestamp, AggregateReference<DummyEntity, Long> reference, UUID uuid, List<String> listOfString,
-				String[] arrayOfString, List<OtherEntity> listOfEntity, OtherEntity[] arrayOfEntity) {
+							LocalTime localTime, ZonedDateTime zonedDateTime, OffsetDateTime offsetDateTime, Instant instant, Date date,
+							Timestamp timestamp, AggregateReference<DummyEntity, Long> reference, UUID uuid,
+							AggregateReference<ReferencedByUuid, UUID> uuidRef, Optional<java.util.UUID> optionalUUID, List<String> listOfString, String[] arrayOfString,
+							List<OtherEntity> listOfEntity, OtherEntity[] arrayOfEntity) {
 			this.id = id;
 			this.someEnum = someEnum;
 			this.localDateTime = localDateTime;
@@ -196,6 +256,8 @@ public class MappingJdbcConverterUnitTests {
 			this.timestamp = timestamp;
 			this.reference = reference;
 			this.uuid = uuid;
+			this.uuidRef = uuidRef;
+			this.optionalUuid = optionalUUID;
 			this.listOfString = listOfString;
 			this.arrayOfString = arrayOfString;
 			this.listOfEntity = listOfEntity;
@@ -276,12 +338,32 @@ public class MappingJdbcConverterUnitTests {
 	private static class OtherEntity {}
 
 	private static class StubbedJdbcTypeFactory implements JdbcTypeFactory {
-		public Object[] arraySource;
+		Object[] arraySource;
 
 		@Override
 		public Array createArray(Object[] value) {
 			arraySource = value;
 			return mock(Array.class);
+		}
+	}
+
+	private record WithOneToOne(@Id String id, @MappedCollection(idColumn = "renamed") Referenced referenced) {
+	}
+
+	private record Referenced(@Id Long id) {
+	}
+
+	private record ReferencedByUuid(@Id UUID id) {
+	}
+
+	static class ByteArrayToUuid implements Converter<byte[], UUID> {
+		@Override
+		public UUID convert(byte[] source) {
+
+			ByteBuffer byteBuffer = ByteBuffer.wrap(source);
+			long high = byteBuffer.getLong();
+			long low = byteBuffer.getLong();
+			return new UUID(high, low);
 		}
 	}
 }

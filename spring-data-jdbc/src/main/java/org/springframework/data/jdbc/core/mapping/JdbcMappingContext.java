@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package org.springframework.data.jdbc.core.mapping;
 
-import org.springframework.data.mapping.InstanceCreatorMetadata;
-import org.springframework.data.mapping.Parameter;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.mapping.model.Property;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
@@ -25,8 +23,6 @@ import org.springframework.data.relational.core.mapping.RelationalMappingContext
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.util.TypeInformation;
-import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 
 /**
  * {@link MappingContext} implementation for JDBC.
@@ -36,10 +32,9 @@ import org.springframework.util.StringUtils;
  * @author Kazuki Shimizu
  * @author Oliver Gierke
  * @author Mark Paluch
+ * @author Paul-Christian Volkmer
  */
 public class JdbcMappingContext extends RelationalMappingContext {
-
-	private static final String MISSING_PARAMETER_NAME = "A constructor parameter name must not be null to be used with Spring Data JDBC; Offending parameter: %s";
 
 	/**
 	 * Creates a new {@link JdbcMappingContext}.
@@ -57,23 +52,6 @@ public class JdbcMappingContext extends RelationalMappingContext {
 	public JdbcMappingContext(NamingStrategy namingStrategy) {
 		super(namingStrategy);
 		setSimpleTypeHolder(JdbcSimpleTypes.HOLDER);
-	}
-
-	@Override
-	protected <T> RelationalPersistentEntity<T> createPersistentEntity(TypeInformation<T> typeInformation) {
-
-		RelationalPersistentEntity<T> entity = super.createPersistentEntity(typeInformation);
-		InstanceCreatorMetadata<RelationalPersistentProperty> creator = entity.getInstanceCreatorMetadata();
-
-		if (creator == null) {
-			return entity;
-		}
-
-		for (Parameter<Object, RelationalPersistentProperty> parameter : creator.getParameters()) {
-			Assert.state(StringUtils.hasText(parameter.getName()), () -> String.format(MISSING_PARAMETER_NAME, parameter));
-		}
-
-		return entity;
 	}
 
 	@Override

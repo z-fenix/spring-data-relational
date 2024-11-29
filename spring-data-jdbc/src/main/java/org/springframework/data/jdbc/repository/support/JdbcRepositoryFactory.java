@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,9 @@ import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.PersistentEntityInformation;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
+import org.springframework.data.repository.query.CachingValueExpressionDelegate;
 import org.springframework.data.repository.query.QueryLookupStrategy;
-import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
@@ -48,6 +49,7 @@ import org.springframework.util.Assert;
  * @author Hebert Coelho
  * @author Diego Krupitza
  * @author Christopher Klein
+ * @author Marcin Grzejszczak
  */
 public class JdbcRepositoryFactory extends RepositoryFactorySupport {
 
@@ -57,7 +59,7 @@ public class JdbcRepositoryFactory extends RepositoryFactorySupport {
 	private final DataAccessStrategy accessStrategy;
 	private final NamedParameterJdbcOperations operations;
 	private final Dialect dialect;
-	@Nullable private BeanFactory beanFactory;
+	private @Nullable BeanFactory beanFactory;
 
 	private QueryMappingConfiguration queryMappingConfiguration = QueryMappingConfiguration.EMPTY;
 	private EntityCallbacks entityCallbacks;
@@ -134,10 +136,10 @@ public class JdbcRepositoryFactory extends RepositoryFactorySupport {
 
 	@Override
 	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(@Nullable QueryLookupStrategy.Key key,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
-
+			ValueExpressionDelegate valueExpressionDelegate) {
 		return Optional.of(JdbcQueryLookupStrategy.create(key, publisher, entityCallbacks, context, converter, dialect,
-				queryMappingConfiguration, operations, beanFactory, evaluationContextProvider));
+				queryMappingConfiguration, operations, beanFactory,
+				new CachingValueExpressionDelegate(valueExpressionDelegate)));
 	}
 
 	/**

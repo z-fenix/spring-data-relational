@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
  * @see EnabledOnDatabase
  */
 @TestExecutionListeners(value = AssumeFeatureTestExecutionListener.class, mergeMode = MERGE_WITH_DEFAULTS)
-// required twice as the annotation lookup doesn't merge multiple occurences of the same annotation
+// required twice as the annotation lookup doesn't merge multiple occurrences of the same annotation
 @ContextCustomizerFactories(value = { TestClassCustomizerFactory.class, EnabledOnDatabaseCustomizerFactory.class })
 @ActiveProfiles(resolver = CombiningActiveProfileResolver.class)
 @ExtendWith(SpringExtension.class)

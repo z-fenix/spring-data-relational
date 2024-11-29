@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,12 @@
  */
 package org.springframework.data.relational.core.conversion;
 
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.springframework.data.mapping.PersistentPropertyPath;
@@ -209,7 +212,7 @@ public interface DbAction<T> {
 	 * Note that deletes for contained entities that reference the root are to be represented by separate
 	 * {@link DbAction}s.
 	 * </p>
-	 * 
+	 *
 	 * @param <T> type of the entity for which this represents a database interaction.
 	 */
 	final class DeleteRoot<T> implements DbAction<T> {
@@ -274,7 +277,7 @@ public interface DbAction<T> {
 	 * Note that deletes for contained entities that reference the root are to be represented by separate
 	 * {@link DbAction}s.
 	 * </p>
-	 * 
+	 *
 	 * @param <T> type of the entity for which this represents a database interaction.
 	 */
 	final class DeleteAllRoot<T> implements DbAction<T> {
@@ -467,7 +470,7 @@ public interface DbAction<T> {
 		 * <p>
 		 * Values come from parent entities but one might also add values manually.
 		 * </p>
-		 * 
+		 *
 		 * @return guaranteed to be not {@code null}.
 		 */
 		Map<PersistentPropertyPath<RelationalPersistentProperty>, Object> getQualifiers();
@@ -479,18 +482,21 @@ public interface DbAction<T> {
 		default Pair<PersistentPropertyPath<RelationalPersistentProperty>, Object> getQualifier() {
 
 			Map<PersistentPropertyPath<RelationalPersistentProperty>, Object> qualifiers = getQualifiers();
-			if (qualifiers.size() == 0)
-				return null;
 
-			if (qualifiers.size() > 1) {
-				throw new IllegalStateException("Can't handle more then one qualifier");
-			}
-
-			Map.Entry<PersistentPropertyPath<RelationalPersistentProperty>, Object> entry = qualifiers.entrySet().iterator()
-					.next();
-			if (entry.getValue() == null) {
+			if (qualifiers.isEmpty()) {
 				return null;
 			}
+
+			Set<Map.Entry<PersistentPropertyPath<RelationalPersistentProperty>, Object>> entries = qualifiers.entrySet();
+			Optional<Map.Entry<PersistentPropertyPath<RelationalPersistentProperty>, Object>> optionalEntry = entries.stream()
+					.filter(e -> e.getValue() != null).min(Comparator.comparing(e -> -e.getKey().getLength()));
+
+			Map.Entry<PersistentPropertyPath<RelationalPersistentProperty>, Object> entry = optionalEntry.orElse(null);
+
+			if (entry == null) {
+				return null;
+			}
+
 			return Pair.of(entry.getKey(), entry.getValue());
 		}
 

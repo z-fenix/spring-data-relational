@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import org.springframework.util.ClassUtils;
  * instance of a class implementing {@link SqlTypeMapping} interface can be set on the {@link Tables} class
  *
  * @author Kurt Niemi
+ * @author Evgenii Koba
+ * @author Jens Schauder
  * @since 3.2
  */
 public class DefaultSqlTypeMapping implements SqlTypeMapping {
@@ -61,6 +63,11 @@ public class DefaultSqlTypeMapping implements SqlTypeMapping {
 
 	@Override
 	public String getColumnType(RelationalPersistentProperty property) {
-		return typeMap.get(ClassUtils.resolvePrimitiveIfNecessary(property.getActualType()));
+		return getColumnType(property.getActualType());
+	}
+
+	@Override
+	public String getColumnType(Class<?> type) {
+		return typeMap.get(ClassUtils.resolvePrimitiveIfNecessary(type));
 	}
 }

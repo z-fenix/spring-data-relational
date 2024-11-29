@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jdbc.repository.support.JdbcRepositoryFactory;
+import org.springframework.data.jdbc.testing.DatabaseType;
+import org.springframework.data.jdbc.testing.EnabledOnDatabase;
 import org.springframework.data.jdbc.testing.IntegrationTest;
 import org.springframework.data.jdbc.testing.TestConfiguration;
 import org.springframework.data.relational.core.mapping.Column;
@@ -36,6 +38,7 @@ import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Embedded.OnEmpty;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.ListCrudRepository;
 import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.jdbc.JdbcTestUtils;
@@ -46,9 +49,11 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * @author Bastian Wilhelm
  * @author Christoph Strobl
  * @author Mikhail Polivakha
+ * @author Jens Schauder
  */
 @IntegrationTest
-public class JdbcRepositoryEmbeddedIntegrationTests {
+@EnabledOnDatabase(DatabaseType.HSQL)
+public class JdbcRepositoryEmbeddedHsqlIntegrationTests {
 
 	@Configuration
 	@Import(TestConfiguration.class)
@@ -69,15 +74,21 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 			return factory.getRepository(WithDotColumnRepo.class);
 		}
 
+		@Bean
+		WithDotEmbeddedRepo withDotEmbeddedRepo(JdbcRepositoryFactory factory) {
+			return factory.getRepository(WithDotEmbeddedRepo.class);
+		}
+
 	}
 
 	@Autowired NamedParameterJdbcTemplate template;
 	@Autowired DummyEntityRepository repository;
 	@Autowired PersonRepository personRepository;
 	@Autowired WithDotColumnRepo withDotColumnRepo;
+	@Autowired WithDotEmbeddedRepo withDotEmbeddedRepo;
 
 	@Test // DATAJDBC-111
-	public void savesAnEntity() {
+	void savesAnEntity() {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 
@@ -86,7 +97,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void saveAndLoadAnEntity() {
+	void saveAndLoadAnEntity() {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 
@@ -102,7 +113,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void findAllFindsAllEntities() {
+	void findAllFindsAllEntities() {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 		DummyEntity other = repository.save(createDummyEntity());
@@ -114,15 +125,30 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 				.containsExactlyInAnyOrder(entity.getId(), other.getId());
 	}
 
+	@Test // GH-1676
+	void findAllFindsAllEntitiesWithOnlyReferenceNotNull() {
+
+		DummyEntity entity = createDummyEntity();
+		entity.prefixedEmbeddable.test = null;
+		entity = repository.save(entity);
+		DummyEntity other = repository.save(createDummyEntity());
+
+		Iterable<DummyEntity> all = repository.findAll();
+
+		assertThat(all)//
+				.extracting(DummyEntity::getId)//
+				.containsExactlyInAnyOrder(entity.getId(), other.getId());
+	}
+
 	@Test // DATAJDBC-111
-	public void findByIdReturnsEmptyWhenNoneFound() {
+	void findByIdReturnsEmptyWhenNoneFound() {
 
 		// NOT saving anything, so DB is empty
 		assertThat(repository.findById(-1L)).isEmpty();
 	}
 
 	@Test // DATAJDBC-111
-	public void update() {
+	void update() {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 
@@ -138,7 +164,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void updateMany() {
+	void updateMany() {
 
 		DummyEntity entity = repository.save(createDummyEntity());
 		DummyEntity other = repository.save(createDummyEntity());
@@ -162,7 +188,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void deleteById() {
+	void deleteById() {
 
 		DummyEntity one = repository.save(createDummyEntity());
 		DummyEntity two = repository.save(createDummyEntity());
@@ -176,7 +202,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void deleteByEntity() {
+	void deleteByEntity() {
 		DummyEntity one = repository.save(createDummyEntity());
 		DummyEntity two = repository.save(createDummyEntity());
 		DummyEntity three = repository.save(createDummyEntity());
@@ -189,7 +215,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void deleteByList() {
+	void deleteByList() {
 
 		DummyEntity one = repository.save(createDummyEntity());
 		DummyEntity two = repository.save(createDummyEntity());
@@ -203,7 +229,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void deleteAll() {
+	void deleteAll() {
 
 		repository.save(createDummyEntity());
 		repository.save(createDummyEntity());
@@ -217,7 +243,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // DATAJDBC-370
-	public void saveWithNullValueEmbeddable() {
+	void saveWithNullValueEmbeddable() {
 
 		DummyEntity entity = repository.save(new DummyEntity());
 
@@ -226,7 +252,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // GH-1286
-	public void findOrderedByEmbeddedProperty() {
+	void findOrderedByEmbeddedProperty() {
 
 		Person first = new Person(null, "Bob", "Seattle", new PersonContacts("ddd@example.com", "+1 111 1111 11 11"));
 		Person second = new Person(null, "Alex", "LA", new PersonContacts("aaa@example.com", "+2 222 2222 22 22"));
@@ -241,7 +267,7 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 	}
 
 	@Test // GH-1286
-	public void sortingWorksCorrectlyIfColumnHasDotInItsName() {
+	void sortingWorksCorrectlyIfColumnHasDotInItsName() {
 
 		WithDotColumn first = new WithDotColumn(null, "Salt Lake City");
 		WithDotColumn second = new WithDotColumn(null, "Istanbul");
@@ -253,6 +279,16 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 				.findAll(Sort.by(new Sort.Order(Sort.Direction.ASC, "address")));
 
 		Assertions.assertThat(fetchedPersons).containsExactly(saved.get(1), saved.get(0), saved.get(2));
+	}
+
+	@Test // GH-1565
+	void saveAndLoadEmbeddedWithDottedPrefix() {
+		WithDotEmbedded entity = withDotEmbeddedRepo.save(
+				new WithDotEmbedded(null, new PersonContacts("jens@jens.de", "123456789")));
+
+		WithDotEmbedded reloaded = withDotEmbeddedRepo.findById(entity.id).orElseThrow();
+
+		assertThat(reloaded).isEqualTo(entity);
 	}
 
 	private static DummyEntity createDummyEntity() {
@@ -288,6 +324,11 @@ public class JdbcRepositoryEmbeddedIntegrationTests {
 
 	record WithDotColumn(@Id Integer id, @Column("address.city") String address) {
 	}
+
+	record WithDotEmbedded(@Id Integer id, @Embedded.Nullable(prefix = "prefix.") PersonContacts contact) {
+	}
+
+	interface WithDotEmbeddedRepo extends ListCrudRepository<WithDotEmbedded, Integer> {}
 
 	@Table("SORT_EMBEDDED_ENTITY")
 	record Person(@Id Long id, String firstName, String address, @Embedded.Nullable PersonContacts personContacts) {

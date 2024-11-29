@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,14 @@ package org.springframework.data.r2dbc.repository.query;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import io.r2dbc.spi.R2dbcType;
-import io.r2dbc.spi.test.MockColumnMetadata;
 import io.r2dbc.spi.test.MockResult;
 import io.r2dbc.spi.test.MockRow;
-import io.r2dbc.spi.test.MockRowMetadata;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.lang.reflect.Method;
 import java.time.LocalDate;
+import java.util.Collections;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +35,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.r2dbc.convert.MappingR2dbcConverter;
@@ -54,8 +54,10 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.AbstractRepositoryMetadata;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.repository.query.ReactiveQueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextAccessor;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.r2dbc.core.PreparedOperation;
 import org.springframework.r2dbc.core.binding.BindTarget;
@@ -70,7 +72,7 @@ import org.springframework.util.ReflectionUtils;
 @MockitoSettings(strictness = Strictness.LENIENT)
 public class StringBasedR2dbcQueryUnitTests {
 
-	private static final SpelExpressionParser PARSER = new SpelExpressionParser();
+	private static final ValueExpressionParser PARSER = ValueExpressionParser.create(SpelExpressionParser::new);
 
 	@Mock private R2dbcEntityOperations entityOperations;
 	@Mock private BindTarget bindTarget;
@@ -80,6 +82,7 @@ public class StringBasedR2dbcQueryUnitTests {
 	private ReactiveDataAccessStrategy accessStrategy;
 	private ProjectionFactory factory;
 	private RepositoryMetadata metadata;
+	private MockEnvironment environment;
 
 	@BeforeEach
 	void setUp() {
@@ -89,6 +92,7 @@ public class StringBasedR2dbcQueryUnitTests {
 		this.accessStrategy = new DefaultReactiveDataAccessStrategy(PostgresDialect.INSTANCE, converter);
 		this.metadata = AbstractRepositoryMetadata.getMetadata(SampleRepository.class);
 		this.factory = new SpelAwareProxyProjectionFactory();
+		this.environment = new MockEnvironment();
 	}
 
 	@Test
@@ -269,12 +273,18 @@ public class StringBasedR2dbcQueryUnitTests {
 		verifyNoMoreInteractions(bindTarget);
 	}
 
-	@Test // gh-475
-	void usesDomainTypeForInterfaceProjectionResultMapping() {
+	@Test
+		// gh-475, GH-1687
+	void usesProjectionTypeForInterfaceProjectionResultMapping() {
 
 		StringBasedR2dbcQuery query = getQueryMethod("findAsInterfaceProjection");
 
-		assertThat(query.resolveResultType(query.getQueryMethod().getResultProcessor())).isEqualTo(Person.class);
+		assertThat(query.getQueryMethod().getResultProcessor().getReturnedType()
+				.getReturnedType()).isEqualTo(PersonProjection.class);
+		assertThat(query.getQueryMethod().getResultProcessor().getReturnedType()
+				.getDomainType()).isEqualTo(Person.class);
+		assertThat(query.resolveResultType(query.getQueryMethod()
+				.getResultProcessor())).isEqualTo(PersonProjection.class);
 	}
 
 	@Test // gh-475
@@ -288,8 +298,6 @@ public class StringBasedR2dbcQueryUnitTests {
 	@Test // gh-612
 	void selectsSimpleType() {
 
-		MockRowMetadata metadata = MockRowMetadata.builder()
-				.columnMetadata(MockColumnMetadata.builder().name("date").type(R2dbcType.DATE).build()).build();
 		LocalDate value = LocalDate.now();
 		MockResult result = MockResult.builder()
 				.row(MockRow.builder().identified(0, LocalDate.class, value).build()).build();
@@ -309,14 +317,22 @@ public class StringBasedR2dbcQueryUnitTests {
 		flux.as(StepVerifier::create).expectNext(value).verifyComplete();
 	}
 
+	@Test // GH-1654
+	void rejectsStringBasedLimitQuery() {
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> getQueryMethod("unsupportedLimitQuery", String.class, Limit.class));
+	}
+
 	private StringBasedR2dbcQuery getQueryMethod(String name, Class<?>... args) {
 
 		Method method = ReflectionUtils.findMethod(SampleRepository.class, name, args);
 
 		R2dbcQueryMethod queryMethod = new R2dbcQueryMethod(method, metadata, factory, converter.getMappingContext());
 
-		return new StringBasedR2dbcQuery(queryMethod, entityOperations, converter, accessStrategy, PARSER,
-				ReactiveQueryMethodEvaluationContextProvider.DEFAULT);
+		QueryMethodValueEvaluationContextAccessor accessor = new QueryMethodValueEvaluationContextAccessor(
+				environment, Collections.emptySet());
+
+		return new StringBasedR2dbcQuery(queryMethod, entityOperations, converter, accessStrategy, new ValueExpressionDelegate(accessor, PARSER));
 	}
 
 	@SuppressWarnings("unused")
@@ -366,6 +382,9 @@ public class StringBasedR2dbcQueryUnitTests {
 
 		@Query("SELECT MAX(DATE)")
 		Flux<LocalDate> findAllLocalDates();
+
+		@Query("SELECT * FROM person WHERE lastname = $1")
+		Person unsupportedLimitQuery(@Param("lastname") String lastname, Limit limit);
 	}
 
 	static class PersonDto {
@@ -388,6 +407,6 @@ public class StringBasedR2dbcQueryUnitTests {
 	}
 
 	enum MyEnum {
-		INSTANCE;
+		INSTANCE
 	}
 }

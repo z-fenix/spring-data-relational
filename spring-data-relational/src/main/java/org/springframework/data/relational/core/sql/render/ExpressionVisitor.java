@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.springframework.util.Assert;
  *
  * @author Mark Paluch
  * @author Jens Schauder
- * @since 1.1
+ * @author Sven Rienstra
  * @see Column
  * @see SubselectExpression
  */
@@ -48,7 +48,7 @@ class ExpressionVisitor extends TypedSubtreeVisitor<Expression> implements PartR
 	/**
 	 * Creates an {@code ExpressionVisitor}.
 	 *
-	 * @param context must not be {@literal null}.
+	 * @param context       must not be {@literal null}.
 	 * @param aliasHandling controls if columns should be rendered as their alias or using their table names.
 	 * @since 2.3
 	 */
@@ -85,9 +85,7 @@ class ExpressionVisitor extends TypedSubtreeVisitor<Expression> implements PartR
 			return Delegation.delegateTo(visitor);
 		}
 
-		if (segment instanceof Column) {
-
-			Column column = (Column) segment;
+		if (segment instanceof Column column) {
 
 			value = aliasHandling == AliasHandling.USE ? NameRenderer.fullyQualifiedReference(context, column)
 					: NameRenderer.fullyQualifiedUnaliasedReference(context, column);
@@ -98,11 +96,21 @@ class ExpressionVisitor extends TypedSubtreeVisitor<Expression> implements PartR
 			} else {
 				value = segment.toString();
 			}
-		} else if (segment instanceof AsteriskFromTable) {
-			value = NameRenderer.render(context, ((AsteriskFromTable) segment).getTable()) + ".*";
+		} else if (segment instanceof AsteriskFromTable asteriskFromTable) {
+
+			TableLike table = asteriskFromTable.getTable();
+			CharSequence renderedTable = table instanceof Aliased aliasedTable ? NameRenderer.render(context, aliasedTable)
+					: NameRenderer.render(context, table);
+
+			value = renderedTable + ".*";
 		} else if (segment instanceof Cast) {
 
 			CastVisitor visitor = new CastVisitor(context);
+			partRenderer = visitor;
+			return Delegation.delegateTo(visitor);
+		} else if (segment instanceof CaseExpression) {
+
+			CaseExpressionVisitor visitor = new CaseExpressionVisitor(context);
 			partRenderer = visitor;
 			return Delegation.delegateTo(visitor);
 		} else {
@@ -125,7 +133,7 @@ class ExpressionVisitor extends TypedSubtreeVisitor<Expression> implements PartR
 
 		if (segment instanceof InlineQuery) {
 
-			NoopVisitor<InlineQuery> partRenderer = new NoopVisitor(InlineQuery.class);
+			NoopVisitor<InlineQuery> partRenderer = new NoopVisitor<>(InlineQuery.class);
 			return Delegation.delegateTo(partRenderer);
 		}
 		return super.enterNested(segment);

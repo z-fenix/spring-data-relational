@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.PropertiesFactoryBean;
 import org.springframework.context.ApplicationListener;
@@ -52,6 +54,7 @@ import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Example;
 import org.springframework.data.domain.ExampleMatcher;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -103,6 +106,7 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * @author Diego Krupitza
  * @author Christopher Klein
  * @author Mikhail Polivakha
+ * @author Paul Jones
  */
 @IntegrationTest
 public class JdbcRepositoryIntegrationTests {
@@ -113,14 +117,6 @@ public class JdbcRepositoryIntegrationTests {
 	@Autowired RootRepository rootRepository;
 
 	@Autowired WithDelimitedColumnRepository withDelimitedColumnRepository;
-
-	private static DummyEntity createDummyEntity() {
-
-		DummyEntity entity = new DummyEntity();
-		entity.setName("Entity Name");
-
-		return entity;
-	}
 
 	@BeforeEach
 	public void before() {
@@ -133,7 +129,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-95
 	public void savesAnEntity() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
 
 		assertThat(JdbcTestUtils.countRowsInTableWhere(template.getJdbcOperations(), "dummy_entity",
 				"id_Prop = " + entity.getIdProp())).isEqualTo(1);
@@ -142,7 +138,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-95
 	public void saveAndLoadAnEntity() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
 
 		assertThat(repository.findById(entity.getIdProp())).hasValueSatisfying(it -> {
 
@@ -154,8 +150,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void insertsManyEntities() {
 
-		DummyEntity entity = createDummyEntity();
-		DummyEntity other = createDummyEntity();
+		DummyEntity entity = createEntity();
+		DummyEntity other = createEntity();
 
 		repository.saveAll(asList(entity, other));
 
@@ -167,7 +163,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void existsReturnsTrueIffEntityExists() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
 
 		assertThat(repository.existsById(entity.getIdProp())).isTrue();
 		assertThat(repository.existsById(entity.getIdProp() + 1)).isFalse();
@@ -176,8 +172,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void findAllFindsAllEntities() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
-		DummyEntity other = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
+		DummyEntity other = repository.save(createEntity());
 
 		Iterable<DummyEntity> all = repository.findAll();
 
@@ -189,8 +185,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void findAllFindsAllSpecifiedEntities() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
-		DummyEntity other = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
+		DummyEntity other = repository.save(createEntity());
 
 		assertThat(repository.findAllById(asList(entity.getIdProp(), other.getIdProp())))//
 				.extracting(DummyEntity::getIdProp)//
@@ -200,9 +196,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void countsEntities() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
 		assertThat(repository.count()).isEqualTo(3L);
 	}
@@ -210,9 +206,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void deleteById() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = repository.save(createDummyEntity());
-		DummyEntity three = repository.save(createDummyEntity());
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = repository.save(createEntity());
+		DummyEntity three = repository.save(createEntity());
 
 		repository.deleteById(two.getIdProp());
 
@@ -224,9 +220,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void deleteByEntity() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = repository.save(createDummyEntity());
-		DummyEntity three = repository.save(createDummyEntity());
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = repository.save(createEntity());
+		DummyEntity three = repository.save(createEntity());
 
 		repository.delete(one);
 
@@ -238,9 +234,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void deleteByList() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = repository.save(createDummyEntity());
-		DummyEntity three = repository.save(createDummyEntity());
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = repository.save(createEntity());
+		DummyEntity three = repository.save(createEntity());
 
 		repository.deleteAll(asList(one, three));
 
@@ -252,9 +248,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-629
 	public void deleteByIdList() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = repository.save(createDummyEntity());
-		DummyEntity three = repository.save(createDummyEntity());
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = repository.save(createEntity());
+		DummyEntity three = repository.save(createEntity());
 
 		repository.deleteAllById(asList(one.idProp, three.idProp));
 
@@ -266,9 +262,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-97
 	public void deleteAll() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
 		assertThat(repository.findAll()).isNotEmpty();
 
@@ -280,7 +276,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-98
 	public void update() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
 
 		entity.setName("something else");
 		DummyEntity saved = repository.save(entity);
@@ -293,8 +289,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-98
 	public void updateMany() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
-		DummyEntity other = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
+		DummyEntity other = repository.save(createEntity());
 
 		entity.setName("something else");
 		other.setName("others Name");
@@ -309,9 +305,9 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-537
 	void insertsOrUpdatesManyEntities() {
 
-		DummyEntity entity = repository.save(createDummyEntity());
+		DummyEntity entity = repository.save(createEntity());
 		entity.setName("something else");
-		DummyEntity other = createDummyEntity();
+		DummyEntity other = createEntity();
 		other.setName("others name");
 		repository.saveAll(asList(other, entity));
 
@@ -345,7 +341,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-318
 	public void queryMethodShouldEmitEvents() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 		eventListener.events.clear();
 
 		repository.findAllWithSql();
@@ -356,7 +352,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-318
 	public void queryMethodWithCustomRowMapperDoesNotEmitEvents() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 		eventListener.events.clear();
 
 		repository.findAllWithCustomMapper();
@@ -367,14 +363,14 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-234
 	public void findAllByQueryName() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 		assertThat(repository.findAllByNamedQuery()).hasSize(1);
 	}
 
 	@Test
 	void findAllByFirstnameWithLock() {
 
-		DummyEntity dummyEntity = createDummyEntity();
+		DummyEntity dummyEntity = createEntity();
 		repository.save(dummyEntity);
 		assertThat(repository.findAllByName(dummyEntity.getName())).hasSize(1);
 	}
@@ -382,14 +378,14 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1022
 	public void findAllByCustomQueryName() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 		assertThat(repository.findAllByCustomNamedQuery()).hasSize(1);
 	}
 
 	@Test // DATAJDBC-341
 	public void findWithMissingQuery() {
 
-		DummyEntity dummy = repository.save(createDummyEntity());
+		DummyEntity dummy = repository.save(createEntity());
 
 		DummyEntity loaded = repository.withMissingColumn(dummy.idProp);
 
@@ -401,7 +397,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-529
 	public void existsWorksAsExpected() {
 
-		DummyEntity dummy = repository.save(createDummyEntity());
+		DummyEntity dummy = repository.save(createEntity());
 
 		assertSoftly(softly -> {
 
@@ -417,7 +413,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-604
 	public void existsInWorksAsExpected() {
 
-		DummyEntity dummy = repository.save(createDummyEntity());
+		DummyEntity dummy = repository.save(createEntity());
 
 		assertSoftly(softly -> {
 
@@ -433,7 +429,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-604
 	public void existsNotInWorksAsExpected() {
 
-		DummyEntity dummy = repository.save(createDummyEntity());
+		DummyEntity dummy = repository.save(createEntity());
 
 		assertSoftly(softly -> {
 
@@ -449,10 +445,10 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // DATAJDBC-534
 	public void countByQueryDerivation() {
 
-		DummyEntity one = createDummyEntity();
-		DummyEntity two = createDummyEntity();
+		DummyEntity one = createEntity();
+		DummyEntity two = createEntity();
 		two.name = "other";
-		DummyEntity three = createDummyEntity();
+		DummyEntity three = createEntity();
 
 		repository.saveAll(asList(one, two, three));
 
@@ -461,7 +457,7 @@ public class JdbcRepositoryIntegrationTests {
 
 	@Test // GH-619
 	public void findBySpElWorksAsExpected() {
-		DummyEntity r = repository.save(createDummyEntity());
+		DummyEntity r = repository.save(createEntity());
 
 		// assign the new id to the global ID provider holder; this is similar to Spring Security's SecurityContextHolder
 		MyIdContextProvider.ExtensionRoot.ID = r.getIdProp();
@@ -489,6 +485,18 @@ public class JdbcRepositoryIntegrationTests {
 
 		assertThat(repository.findPageByNameContains("a", PageRequest.of(0, 2)).getContent()).hasSize(2);
 		assertThat(repository.findPageByNameContains("a", PageRequest.of(1, 2)).getContent()).hasSize(1);
+	}
+
+	@Test // GH-1654
+	public void selectWithLimitShouldReturnCorrectResult() {
+
+		repository.saveAll(Arrays.asList(new DummyEntity("a1"), new DummyEntity("a2"), new DummyEntity("a3")));
+
+		List<DummyEntity> page = repository.findByNameContains("a", Limit.of(3));
+		assertThat(page).hasSize(3);
+
+		assertThat(repository.findByNameContains("a", Limit.of(2))).hasSize(2);
+		assertThat(repository.findByNameContains("a", Limit.unlimited())).hasSize(3);
 	}
 
 	@Test // GH-774
@@ -521,7 +529,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-971
 	public void stringQueryProjectionShouldReturnProjectedEntities() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
 		List<DummyProjection> result = repository.findProjectedWithSql(DummyProjection.class);
 
@@ -532,7 +540,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-971
 	public void stringQueryProjectionShouldReturnDtoProjectedEntities() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
 		List<DtoProjection> result = repository.findProjectedWithSql(DtoProjection.class);
 
@@ -543,7 +551,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-971
 	public void partTreeQueryProjectionShouldReturnProjectedEntities() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
 		List<DummyProjection> result = repository.findProjectedByName("Entity Name");
 
@@ -554,7 +562,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-971
 	public void pageQueryProjectionShouldReturnProjectedEntities() {
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
 		Page<DummyProjection> result = repository.findPageProjectionByName("Entity Name", PageRequest.ofSize(10));
 
@@ -572,8 +580,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-908
 	void derivedQueryWithBooleanLiteralFindsCorrectValues() {
 
-		repository.save(createDummyEntity());
-		DummyEntity entity = createDummyEntity();
+		repository.save(createEntity());
+		DummyEntity entity = createEntity();
 		entity.flag = true;
 		entity = repository.save(entity);
 
@@ -585,8 +593,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-987
 	void queryBySimpleReference() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = createDummyEntity();
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = createEntity();
 		two.ref = AggregateReference.to(one.idProp);
 		two = repository.save(two);
 
@@ -598,8 +606,8 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-987
 	void queryByAggregateReference() {
 
-		DummyEntity one = repository.save(createDummyEntity());
-		DummyEntity two = createDummyEntity();
+		DummyEntity one = repository.save(createEntity());
+		DummyEntity two = createEntity();
 		two.ref = AggregateReference.to(one.idProp);
 		two = repository.save(two);
 
@@ -611,7 +619,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1167
 	void stringResult() {
 
-		repository.save(createDummyEntity()); // just ensure we have data in the table
+		repository.save(createEntity()); // just ensure we have data in the table
 
 		assertThat(repository.returnInput("HELLO")).isEqualTo("HELLO");
 	}
@@ -619,7 +627,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1167
 	void nullStringResult() {
 
-		repository.save(createDummyEntity()); // just ensure we have data in the table
+		repository.save(createEntity()); // just ensure we have data in the table
 
 		assertThat(repository.returnInput(null)).isNull();
 	}
@@ -717,11 +725,11 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findOneByExampleShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		dummyEntity2.setName("Diego");
 		repository.save(dummyEntity2);
 
@@ -734,10 +742,10 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findOneByExampleMultipleMatchShouldGetOne() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 
 		assertThatThrownBy(() -> repository.findOne(example)).isInstanceOf(IncorrectResultSizeDataAccessException.class)
 				.hasMessageContaining("expected 1, actual 2");
@@ -746,7 +754,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findOneByExampleShouldGetNone() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 		repository.save(dummyEntity1);
 
@@ -760,11 +768,11 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExampleShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		dummyEntity2.setName("Diego");
 		repository.save(dummyEntity2);
 
@@ -779,10 +787,10 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExampleMultipleMatchShouldGetOne() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 
 		Iterable<DummyEntity> allFound = repository.findAll(example);
 
@@ -795,7 +803,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExampleShouldGetNone() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
@@ -810,12 +818,12 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExamplePageableShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		dummyEntity2.setName("Diego");
 
 		repository.save(dummyEntity2);
@@ -832,10 +840,10 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExamplePageableMultipleMatchShouldGetOne() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 		Pageable pageRequest = PageRequest.of(0, 10);
 
 		Iterable<DummyEntity> allFound = repository.findAll(example, pageRequest);
@@ -849,7 +857,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExamplePageableShouldGetNone() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
@@ -865,10 +873,10 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void findAllByExamplePageableOutsidePageShouldGetNone() {
 
-		repository.save(createDummyEntity());
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
+		repository.save(createEntity());
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 		Pageable pageRequest = PageRequest.of(10, 10);
 
 		Iterable<DummyEntity> allFound = repository.findAll(example, pageRequest);
@@ -883,14 +891,14 @@ public class JdbcRepositoryIntegrationTests {
 	void findAllByExamplePageable(Pageable pageRequest, int size, int totalPages, List<String> notContains) {
 
 		for (int i = 0; i < 100; i++) {
-			DummyEntity dummyEntity = createDummyEntity();
+			DummyEntity dummyEntity = createEntity();
 			dummyEntity.setFlag(true);
 			dummyEntity.setName("" + i);
 
 			repository.save(dummyEntity);
 		}
 
-		DummyEntity dummyEntityExample = createDummyEntity();
+		DummyEntity dummyEntityExample = createEntity();
 		dummyEntityExample.setName(null);
 		dummyEntityExample.setFlag(true);
 
@@ -930,11 +938,11 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void existsByExampleShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		dummyEntity2.setName("Diego");
 		repository.save(dummyEntity2);
 
@@ -948,13 +956,13 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void existsByExampleMultipleMatchShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		repository.save(dummyEntity2);
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 
 		boolean exists = repository.exists(example);
 		assertThat(exists).isTrue();
@@ -963,7 +971,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void existsByExampleShouldGetNone() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
@@ -980,14 +988,14 @@ public class JdbcRepositoryIntegrationTests {
 
 		Instant pointInTime = Instant.now().truncatedTo(ChronoUnit.MILLIS).minusSeconds(10000);
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 		two.setName("Diego");
 		two.setPointInTime(pointInTime);
 		repository.save(two);
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName("Diego");
 		exampleEntitiy.setPointInTime(pointInTime);
 
@@ -1000,12 +1008,12 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void countByExampleShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		dummyEntity2.setName("Diego");
 
 		repository.save(dummyEntity2);
@@ -1020,13 +1028,13 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void countByExampleMultipleMatchShouldGetOne() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		repository.save(dummyEntity1);
 
-		DummyEntity dummyEntity2 = createDummyEntity();
+		DummyEntity dummyEntity2 = createEntity();
 		repository.save(dummyEntity2);
 
-		Example<DummyEntity> example = Example.of(createDummyEntity());
+		Example<DummyEntity> example = Example.of(createEntity());
 
 		long count = repository.count(example);
 		assertThat(count).isEqualTo(2);
@@ -1035,7 +1043,7 @@ public class JdbcRepositoryIntegrationTests {
 	@Test // GH-1192
 	void countByExampleShouldGetNone() {
 
-		DummyEntity dummyEntity1 = createDummyEntity();
+		DummyEntity dummyEntity1 = createEntity();
 		dummyEntity1.setFlag(true);
 
 		repository.save(dummyEntity1);
@@ -1051,14 +1059,14 @@ public class JdbcRepositoryIntegrationTests {
 	void countByExampleComplex() {
 
 		Instant pointInTime = Instant.now().minusSeconds(10000).truncatedTo(ChronoUnit.MILLIS);
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 		two.setName("Diego");
 		two.setPointInTime(pointInTime);
 		repository.save(two);
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName("Diego");
 		exampleEntitiy.setPointInTime(pointInTime);
 
@@ -1074,7 +1082,7 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
@@ -1083,7 +1091,7 @@ public class JdbcRepositoryIntegrationTests {
 		// I'm looking at you MariaDb.
 		two = repository.findById(two.idProp).orElseThrow();
 
-		DummyEntity third = createDummyEntity();
+		DummyEntity third = createEntity();
 		third.setName(searchName);
 		third.setPointInTime(now.minusSeconds(200000));
 		third = repository.save(third);
@@ -1091,7 +1099,7 @@ public class JdbcRepositoryIntegrationTests {
 		// I'm looking at you MariaDb.
 		third = repository.findById(third.idProp).orElseThrow();
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntitiy);
@@ -1124,7 +1132,7 @@ public class JdbcRepositoryIntegrationTests {
 		assertThat(first.map(DummyEntity::getName)).containsExactly("one", "three");
 
 		Window<DummyEntity> second = repository.findBy(example, q -> q.limit(2).sortBy(Sort.by("name")))
-				.scroll(ScrollPosition.offset(2));
+				.scroll(ScrollPosition.offset(1));
 		assertThat(second.map(DummyEntity::getName)).containsExactly("two");
 
 		WindowIterator<DummyEntity> iterator = WindowIterator.of(
@@ -1142,20 +1150,20 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now();
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
 		repository.save(two);
 
-		DummyEntity third = createDummyEntity();
+		DummyEntity third = createEntity();
 		third.setName(searchName);
 		third.setPointInTime(now.minusSeconds(200000));
 		repository.save(third);
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntitiy);
@@ -1170,9 +1178,9 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
@@ -1181,12 +1189,12 @@ public class JdbcRepositoryIntegrationTests {
 		// I'm looking at you MariaDb.
 		two = repository.findById(two.idProp).orElseThrow();
 
-		DummyEntity third = createDummyEntity();
+		DummyEntity third = createEntity();
 		third.setName(searchName);
 		third.setPointInTime(now.minusSeconds(200000));
 		repository.save(third);
 
-		DummyEntity exampleEntity = createDummyEntity();
+		DummyEntity exampleEntity = createEntity();
 		exampleEntity.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntity);
@@ -1203,19 +1211,19 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now();
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
 		repository.save(two);
 
-		DummyEntity third = createDummyEntity();
+		DummyEntity third = createEntity();
 		third.setName(searchName);
 		third.setPointInTime(now.minusSeconds(200000));
 		repository.save(third);
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntitiy);
@@ -1230,9 +1238,9 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
 		two = repository.save(two);
@@ -1240,7 +1248,7 @@ public class JdbcRepositoryIntegrationTests {
 		// I'm looking at you MariaDb.
 		two = repository.findById(two.idProp).orElseThrow();
 
-		DummyEntity exampleEntitiy = createDummyEntity();
+		DummyEntity exampleEntitiy = createEntity();
 		exampleEntitiy.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntitiy);
@@ -1256,14 +1264,14 @@ public class JdbcRepositoryIntegrationTests {
 		String searchName = "Diego";
 		Instant now = Instant.now();
 
-		repository.save(createDummyEntity());
+		repository.save(createEntity());
 
-		DummyEntity two = createDummyEntity();
+		DummyEntity two = createEntity();
 		two.setName(searchName);
 		two.setPointInTime(now.minusSeconds(10000));
 		two = repository.save(two);
 
-		DummyEntity exampleEntity = createDummyEntity();
+		DummyEntity exampleEntity = createEntity();
 		exampleEntity.setName(searchName);
 
 		Example<DummyEntity> example = Example.of(exampleEntity);
@@ -1271,6 +1279,36 @@ public class JdbcRepositoryIntegrationTests {
 		Optional<DummyProjectExample> match = repository.findBy(example, p -> p.as(DummyProjectExample.class).one());
 
 		assertThat(match.get().getName()).contains(two.getName());
+	}
+
+	@Test
+	void fetchDtoWithNoArgsConstructorWithAggregateReferencePopulated() {
+
+		DummyEntity entity = new DummyEntity();
+		entity.setRef(AggregateReference.to(20L));
+		entity.setName("Test Dto");
+		repository.save(entity);
+
+		assertThat(repository.findById(entity.idProp).orElseThrow().getRef()).isEqualTo(AggregateReference.to(20L));
+
+		DummyDto foundDto = repository.findDtoByIdProp(entity.idProp).orElseThrow();
+		assertThat(foundDto.getName()).isEqualTo("Test Dto");
+		assertThat(foundDto.getRef()).isEqualTo(AggregateReference.to(20L));
+	}
+
+	@Test // GH-1759
+	void fetchDtoWithAllArgsConstructorWithAggregateReferencePopulated() {
+
+		DummyEntity entity = new DummyEntity();
+		entity.setRef(AggregateReference.to(20L));
+		entity.setName("Test Dto");
+		repository.save(entity);
+
+		assertThat(repository.findById(entity.idProp).orElseThrow().getRef()).isEqualTo(AggregateReference.to(20L));
+
+		DummyAllArgsDto foundDto = repository.findAllArgsDtoByIdProp(entity.idProp).orElseThrow();
+		assertThat(foundDto.getName()).isEqualTo("Test Dto");
+		assertThat(foundDto.getRef()).isEqualTo(AggregateReference.to(20L));
 	}
 
 	@Test // GH-1405
@@ -1288,6 +1326,49 @@ public class JdbcRepositoryIntegrationTests {
 
 		assertThat(inDatabase).isPresent();
 		assertThat(inDatabase.get().getIdentifier()).isEqualTo("UR-123");
+	}
+
+	@Test // GH-1323
+	@EnabledOnFeature(TestDatabaseFeatures.Feature.WHERE_IN_TUPLE)
+	void queryWithTupleIn() {
+
+		DummyEntity one = repository.save(createEntity("one"));
+		DummyEntity two = repository.save(createEntity("two"));
+		DummyEntity three = repository.save(createEntity("three"));
+
+		List<Object[]> tuples = List.of(new Object[] { two.idProp, "two" }, // matches "two"
+				new Object[] { three.idProp, "two" } // matches nothing
+		);
+
+		List<DummyEntity> result = repository.findByListInTuple(tuples);
+
+		assertThat(result).containsOnly(two);
+	}
+
+	@Test // GH-1900
+	void queryByListOfByteArray() {
+
+		DummyEntity one = repository.save(createEntity("one", it -> it.setBytes(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 })));
+		DummyEntity two = repository.save(createEntity("two", it -> it.setBytes(new byte[] { 8, 7, 6, 5, 4, 3, 2, 1 })));
+		DummyEntity three = repository
+				.save(createEntity("three", it -> it.setBytes(new byte[] { 3, 3, 3, 3, 3, 3, 3, 3 })));
+
+		List<DummyEntity> result = repository.findByBytesIn(List.of(three.getBytes(), one.getBytes()));
+
+		assertThat(result).extracting("idProp").containsExactlyInAnyOrder(one.idProp, three.idProp);
+	}
+
+	@Test // GH-1900
+	void queryByByteArray() {
+
+		DummyEntity one = repository.save(createEntity("one", it -> it.setBytes(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 })));
+		DummyEntity two = repository.save(createEntity("two", it -> it.setBytes(new byte[] { 8, 7, 6, 5, 4, 3, 2, 1 })));
+		DummyEntity three = repository
+				.save(createEntity("three", it -> it.setBytes(new byte[] { 3, 3, 3, 3, 3, 3, 3, 3 })));
+
+		List<DummyEntity> result = repository.findByBytes(two.getBytes());
+
+		assertThat(result).extracting("idProp").containsExactly(two.idProp);
 	}
 
 	private Root createRoot(String namePrefix) {
@@ -1317,7 +1398,7 @@ public class JdbcRepositoryIntegrationTests {
 
 		Instant now = Instant.now();
 
-		DummyEntity first = createDummyEntity();
+		DummyEntity first = createEntity();
 		Instant earlier = now.minusSeconds(1000L);
 		OffsetDateTime earlierPlus3 = earlier.atOffset(ZoneOffset.ofHours(3));
 		first.setPointInTime(earlier);
@@ -1325,7 +1406,7 @@ public class JdbcRepositoryIntegrationTests {
 
 		first.setName("first");
 
-		DummyEntity second = createDummyEntity();
+		DummyEntity second = createEntity();
 		Instant later = now.plusSeconds(1000L);
 		OffsetDateTime laterPlus3 = later.atOffset(ZoneOffset.ofHours(3));
 		second.setPointInTime(later);
@@ -1385,6 +1466,8 @@ public class JdbcRepositoryIntegrationTests {
 
 		Page<DummyEntity> findPageByNameContains(String name, Pageable pageable);
 
+		List<DummyEntity> findByNameContains(String name, Limit limit);
+
 		Page<DummyProjection> findPageProjectionByName(String name, Pageable pageable);
 
 		Slice<DummyEntity> findSliceByNameContains(String name, Pageable pageable);
@@ -1411,6 +1494,19 @@ public class JdbcRepositoryIntegrationTests {
 
 		@Query("SELECT * FROM DUMMY_ENTITY WHERE DIRECTION = :direction")
 		List<DummyEntity> findByEnumType(Direction direction);
+
+		Optional<DummyDto> findDtoByIdProp(Long idProp);
+
+		Optional<DummyAllArgsDto> findAllArgsDtoByIdProp(Long idProp);
+
+		@Query("SELECT * FROM DUMMY_ENTITY WHERE (ID_PROP, NAME) IN (:tuples)")
+		List<DummyEntity> findByListInTuple(List<Object[]> tuples);
+
+		@Query("SELECT * FROM DUMMY_ENTITY WHERE BYTES IN (:bytes)")
+		List<DummyEntity> findByBytesIn(List<byte[]> bytes);
+
+		@Query("SELECT * FROM DUMMY_ENTITY WHERE BYTES = :bytes")
+		List<DummyEntity> findByBytes(byte[] bytes);
 	}
 
 	interface RootRepository extends ListCrudRepository<Root, Long> {
@@ -1725,6 +1821,24 @@ public class JdbcRepositoryIntegrationTests {
 		}
 	}
 
+	private static DummyEntity createEntity() {
+		return createEntity("Entity Name");
+	}
+
+	private static DummyEntity createEntity(String entityName) {
+		return createEntity(entityName, it -> {});
+	}
+
+	private static DummyEntity createEntity(String entityName, Consumer<DummyEntity> customizer) {
+
+		DummyEntity entity = new DummyEntity();
+		entity.setName(entityName);
+
+		customizer.accept(entity);
+
+		return entity;
+	}
+
 	static class DummyEntity {
 
 		String name;
@@ -1734,6 +1848,7 @@ public class JdbcRepositoryIntegrationTests {
 		boolean flag;
 		AggregateReference<DummyEntity, Long> ref;
 		Direction direction;
+		byte[] bytes = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 		public DummyEntity(String name) {
 			this.name = name;
@@ -1813,10 +1928,59 @@ public class JdbcRepositoryIntegrationTests {
 		public int hashCode() {
 			return Objects.hash(name, pointInTime, offsetDateTime, idProp, flag, ref, direction);
 		}
+
+		public void setBytes(byte[] bytes) {
+			this.bytes = bytes;
+		}
+
+		public byte[] getBytes() {
+			return bytes;
+		}
+
+		@Override
+		public String toString() {
+			return "DummyEntity{" + "name='" + name + '\'' + ", idProp=" + idProp + '}';
+		}
 	}
 
 	enum Direction {
 		LEFT, CENTER, RIGHT
+	}
+
+	static class DummyDto {
+		@Id Long idProp;
+		String name;
+		AggregateReference<DummyEntity, Long> ref;
+
+		public DummyDto() {}
+
+		public String getName() {
+			return name;
+		}
+
+		public AggregateReference<DummyEntity, Long> getRef() {
+			return ref;
+		}
+	}
+
+	static class DummyAllArgsDto {
+		@Id Long idProp;
+		String name;
+		AggregateReference<DummyEntity, Long> ref;
+
+		public DummyAllArgsDto(Long idProp, String name, AggregateReference<DummyEntity, Long> ref) {
+			this.idProp = idProp;
+			this.name = name;
+			this.ref = ref;
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public AggregateReference<DummyEntity, Long> getRef() {
+			return ref;
+		}
 	}
 
 	interface DummyProjection {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,15 +33,6 @@ import org.springframework.util.Assert;
  * @author Kurt Niemi
  */
 public interface NamingStrategy {
-
-	/**
-	 * Empty implementation of the interface utilizing only the default implementation.
-	 * <p>
-	 * Using this avoids creating essentially the same class over and over again.
-	 *
-	 * @deprecated use {@link DefaultNamingStrategy#INSTANCE} instead.
-	 */
-	@Deprecated(since = "2.4", forRemoval = true) NamingStrategy INSTANCE = DefaultNamingStrategy.INSTANCE;
 
 	/**
 	 * Defaults to no schema.
@@ -85,14 +76,6 @@ public interface NamingStrategy {
 		Assert.notNull(property, "Property must not be null");
 
 		return property.getOwner().getTableName().getReference();
-	}
-
-	/**
-	 * @deprecated use {@link #getReverseColumnName(RelationalPersistentEntity)} instead.
-	 */
-	@Deprecated(since = "3.2", forRemoval = true)
-	default String getReverseColumnName(PersistentPropertyPathExtension path) {
-		return getReverseColumnName(path.getRequiredLeafEntity());
 	}
 
 	default String getReverseColumnName(RelationalPersistentEntity<?> owner) {

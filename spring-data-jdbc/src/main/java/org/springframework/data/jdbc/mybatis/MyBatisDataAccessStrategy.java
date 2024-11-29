@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,9 +36,7 @@ import org.springframework.data.relational.core.dialect.Dialect;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.query.Query;
-import org.springframework.data.relational.core.sql.IdentifierProcessing;
 import org.springframework.data.relational.core.sql.LockMode;
-import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.util.Assert;
 
@@ -102,8 +100,7 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 		// the DefaultDataAccessStrategy needs a reference to the returned DataAccessStrategy. This creates a dependency
 		// cycle. In order to create it, we need something that allows to defer closing the cycle until all the elements are
 		// created. That is the purpose of the DelegatingAccessStrategy.
-		MyBatisDataAccessStrategy myBatisDataAccessStrategy = new MyBatisDataAccessStrategy(sqlSession,
-				dialect.getIdentifierProcessing());
+		MyBatisDataAccessStrategy myBatisDataAccessStrategy = new MyBatisDataAccessStrategy(sqlSession);
 		myBatisDataAccessStrategy.setNamespaceStrategy(namespaceStrategy);
 
 		return new CascadingDataAccessStrategy(
@@ -120,15 +117,6 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	 * to create such a {@link DataAccessStrategy}.
 	 *
 	 * @param sqlSession Must be non {@literal null}.
-	 * @deprecated because identifierProcessing now will not be considered in the process of applying it to
-	 *             {@link SqlIdentifier}, use {@link MyBatisDataAccessStrategy(SqlSession)} constructor instead
-	 */
-	@Deprecated(since = "3.1", forRemoval = true)
-	public MyBatisDataAccessStrategy(SqlSession sqlSession, IdentifierProcessing identifierProcessing) {
-		this(sqlSession);
-	}
-
-	/**
 	 * @since 3.1
 	 */
 	public MyBatisDataAccessStrategy(SqlSession sqlSession) {
@@ -268,7 +256,7 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Class<T> domainType) {
+	public <T> List<T> findAll(Class<T> domainType) {
 
 		String statement = namespace(domainType) + ".findAll";
 		MyBatisContext parameter = new MyBatisContext(null, null, domainType, Collections.emptyMap());
@@ -276,13 +264,13 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	}
 
 	@Override
-	public <T> Iterable<T> findAllById(Iterable<?> ids, Class<T> domainType) {
+	public <T> List<T> findAllById(Iterable<?> ids, Class<T> domainType) {
 		return sqlSession().selectList(namespace(domainType) + ".findAllById",
 				new MyBatisContext(ids, null, domainType, Collections.emptyMap()));
 	}
 
 	@Override
-	public Iterable<Object> findAllByPath(Identifier identifier,
+	public List<Object> findAllByPath(Identifier identifier,
 			PersistentPropertyPath<? extends RelationalPersistentProperty> path) {
 
 		String statementName = namespace(getOwnerTyp(path)) + ".findAllByPath-" + path.toDotPath();
@@ -300,7 +288,7 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Class<T> domainType, Sort sort) {
+	public <T> List<T> findAll(Class<T> domainType, Sort sort) {
 
 		Map<String, Object> additionalContext = new HashMap<>();
 		additionalContext.put("sort", sort);
@@ -309,7 +297,7 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Class<T> domainType, Pageable pageable) {
+	public <T> List<T> findAll(Class<T> domainType, Pageable pageable) {
 
 		Map<String, Object> additionalContext = new HashMap<>();
 		additionalContext.put("pageable", pageable);
@@ -323,12 +311,12 @@ public class MyBatisDataAccessStrategy implements DataAccessStrategy {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Query query, Class<T> probeType) {
+	public <T> List<T> findAll(Query query, Class<T> probeType) {
 		throw new UnsupportedOperationException("Not implemented");
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Query query, Class<T> probeType, Pageable pageable) {
+	public <T> List<T> findAll(Query query, Class<T> probeType, Pageable pageable) {
 		throw new UnsupportedOperationException("Not implemented");
 	}
 

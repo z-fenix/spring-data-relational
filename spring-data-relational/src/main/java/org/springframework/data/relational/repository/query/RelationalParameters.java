@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,15 @@
  */
 package org.springframework.data.relational.repository.query;
 
-import java.lang.reflect.Method;
 import java.util.List;
+import java.util.function.Function;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ResolvableType;
 import org.springframework.data.relational.repository.query.RelationalParameters.RelationalParameter;
 import org.springframework.data.repository.query.Parameter;
 import org.springframework.data.repository.query.Parameters;
+import org.springframework.data.repository.query.ParametersSource;
 import org.springframework.data.util.TypeInformation;
 
 /**
@@ -33,21 +34,22 @@ import org.springframework.data.util.TypeInformation;
 public class RelationalParameters extends Parameters<RelationalParameters, RelationalParameter> {
 
 	/**
-	 * Creates a new {@link RelationalParameters} instance from the given {@link Method}.
+	 * Creates a new {@link RelationalParameters} instance from the given {@link ParametersSource}.
 	 *
-	 * @param method must not be {@literal null}.
+	 * @param parametersSource must not be {@literal null}.
 	 */
-	public RelationalParameters(Method method) {
-		super(method);
+	public RelationalParameters(ParametersSource parametersSource) {
+		super(parametersSource,
+				methodParameter -> new RelationalParameter(methodParameter, parametersSource.getDomainTypeInformation()));
 	}
 
-	private RelationalParameters(List<RelationalParameter> parameters) {
+	protected RelationalParameters(ParametersSource parametersSource,
+			Function<MethodParameter, RelationalParameter> parameterFactory) {
+		super(parametersSource, parameterFactory);
+	}
+
+	protected RelationalParameters(List<RelationalParameter> parameters) {
 		super(parameters);
-	}
-
-	@Override
-	protected RelationalParameter createParameter(MethodParameter parameter) {
-		return new RelationalParameter(parameter);
 	}
 
 	@Override
@@ -63,16 +65,17 @@ public class RelationalParameters extends Parameters<RelationalParameters, Relat
 	 */
 	public static class RelationalParameter extends Parameter {
 
-		private final MethodParameter parameter;
+		private final TypeInformation<?> typeInformation;
 
 		/**
 		 * Creates a new {@link RelationalParameter}.
 		 *
 		 * @param parameter must not be {@literal null}.
 		 */
-		RelationalParameter(MethodParameter parameter) {
-			super(parameter);
-			this.parameter = parameter;
+		protected RelationalParameter(MethodParameter parameter, TypeInformation<?> domainType) {
+			super(parameter, domainType);
+			this.typeInformation = TypeInformation.fromMethodParameter(parameter);
+
 		}
 
 		public ResolvableType getResolvableType() {
@@ -80,7 +83,7 @@ public class RelationalParameters extends Parameters<RelationalParameters, Relat
 		}
 
 		public TypeInformation<?> getTypeInformation() {
-			return TypeInformation.fromMethodParameter(parameter);
+			return typeInformation;
 		}
 	}
 }

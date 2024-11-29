@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -514,7 +514,7 @@ class SqlGenerator {
 
 		Table table = getTable();
 
-		List<Expression> columnExpressions = new ArrayList<>();
+		Set<Expression> columnExpressions = new LinkedHashSet<>();
 
 		List<Join> joinTables = new ArrayList<>();
 		for (PersistentPropertyPath<RelationalPersistentProperty> path : mappingContext
@@ -837,7 +837,7 @@ class SqlGenerator {
 		}
 
 		PersistentPropertyPath<RelationalPersistentProperty> persistentPropertyPath = mappingContext
-				.getPersistentPropertyPath(order.getProperty(), entity.getType());
+				.getPersistentPropertyPath(order.getProperty(), entity.getTypeInformation());
 
 		propertyToSortBy = persistentPropertyPath.getBaseProperty();
 
@@ -1022,7 +1022,7 @@ class SqlGenerator {
 
 		if (query.isSorted()) {
 			List<OrderByField> sort = this.queryMapper.getMappedSort(table, query.getSort(), entity);
-			selectOrdered = selectBuilder.orderBy(sort);
+			selectOrdered = selectOrdered.orderBy(sort);
 		}
 
 		SelectBuilder.SelectLimitOffset limitable = (SelectBuilder.SelectLimitOffset) selectOrdered;

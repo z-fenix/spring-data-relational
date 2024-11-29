@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ import org.springframework.data.relational.core.mapping.RelationalPersistentProp
 import org.springframework.data.relational.core.mapping.event.*;
 import org.springframework.data.relational.core.query.Query;
 import org.springframework.data.support.PageableExecutionUtils;
+import org.springframework.data.util.Streamable;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
@@ -165,23 +166,14 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 
 		Assert.notNull(instance, "Aggregate instance must not be null");
 
+		verifyIdProperty(instance);
+
 		return performSave(new EntityAndChangeCreator<>(instance, changeCreatorSelectorForSave(instance)));
 	}
 
 	@Override
-	public <T> Iterable<T> saveAll(Iterable<T> instances) {
-
-		Assert.notNull(instances, "Aggregate instances must not be null");
-
-		if (!instances.iterator().hasNext()) {
-			return Collections.emptyList();
-		}
-
-		List<EntityAndChangeCreator<T>> entityAndChangeCreators = new ArrayList<>();
-		for (T instance : instances) {
-			entityAndChangeCreators.add(new EntityAndChangeCreator<>(instance, changeCreatorSelectorForSave(instance)));
-		}
-		return performSaveAll(entityAndChangeCreators);
+	public <T> List<T> saveAll(Iterable<T> instances) {
+		return doInBatch(instances, (first) -> (second -> changeCreatorSelectorForSave(first).apply(second)));
 	}
 
 	/**
@@ -201,22 +193,8 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> insertAll(Iterable<T> instances) {
-
-		Assert.notNull(instances, "Aggregate instances must not be null");
-
-		if (!instances.iterator().hasNext()) {
-			return Collections.emptyList();
-		}
-
-		List<EntityAndChangeCreator<T>> entityAndChangeCreators = new ArrayList<>();
-		for (T instance : instances) {
-
-			Function<T, RootAggregateChange<T>> changeCreator = entity -> createInsertChange(prepareVersionForInsert(entity));
-			EntityAndChangeCreator<T> entityChange = new EntityAndChangeCreator<>(instance, changeCreator);
-			entityAndChangeCreators.add(entityChange);
-		}
-		return performSaveAll(entityAndChangeCreators);
+	public <T> List<T> insertAll(Iterable<T> instances) {
+		return doInBatch(instances, (__) -> (entity -> createInsertChange(prepareVersionForInsert(entity))));
 	}
 
 	/**
@@ -236,7 +214,11 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> updateAll(Iterable<T> instances) {
+	public <T> List<T> updateAll(Iterable<T> instances) {
+		return doInBatch(instances, (__) -> (entity -> createUpdateChange(prepareVersionForUpdate(entity))));
+	}
+
+	private <T> List<T> doInBatch(Iterable<T> instances,Function<T, Function<T, RootAggregateChange<T>>> changeCreatorFunction) {
 
 		Assert.notNull(instances, "Aggregate instances must not be null");
 
@@ -246,10 +228,8 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 
 		List<EntityAndChangeCreator<T>> entityAndChangeCreators = new ArrayList<>();
 		for (T instance : instances) {
-
-			Function<T, RootAggregateChange<T>> changeCreator = entity -> createUpdateChange(prepareVersionForUpdate(entity));
-			EntityAndChangeCreator<T> entityChange = new EntityAndChangeCreator<>(instance, changeCreator);
-			entityAndChangeCreators.add(entityChange);
+			verifyIdProperty(instance);
+			entityAndChangeCreators.add(new EntityAndChangeCreator<T>(instance, changeCreatorFunction.apply(instance)));
 		}
 		return performSaveAll(entityAndChangeCreators);
 	}
@@ -295,7 +275,7 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Class<T> domainType, Sort sort) {
+	public <T> List<T> findAll(Class<T> domainType, Sort sort) {
 
 		Assert.notNull(domainType, "Domain type must not be null");
 
@@ -320,8 +300,13 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Query query, Class<T> domainType) {
-		return accessStrategy.findAll(query, domainType);
+	public <T> List<T> findAll(Query query, Class<T> domainType) {
+
+		Iterable<T> all = accessStrategy.findAll(query, domainType);
+		if (all instanceof List<T> list) {
+			return list;
+		}
+		return Streamable.of(all).toList();
 	}
 
 	@Override
@@ -334,7 +319,7 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> findAll(Class<T> domainType) {
+	public <T> List<T> findAll(Class<T> domainType) {
 
 		Assert.notNull(domainType, "Domain type must not be null");
 
@@ -343,7 +328,7 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 	}
 
 	@Override
-	public <T> Iterable<T> findAllById(Iterable<?> ids, Class<T> domainType) {
+	public <T> List<T> findAllById(Iterable<?> ids, Class<T> domainType) {
 
 		Assert.notNull(ids, "Ids must not be null");
 		Assert.notNull(domainType, "Domain type must not be null");
@@ -423,6 +408,11 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 		for (Class type : groupedByType.keySet()) {
 			doDeleteAll(groupedByType.get(type), type);
 		}
+	}
+
+	private <T> void verifyIdProperty(T instance) {
+		// accessing the id property just to raise an exception in the case it does not exist.
+		context.getRequiredPersistentEntity(instance.getClass()).getRequiredIdProperty();
 	}
 
 	private <T> void doDeleteAll(Iterable<? extends T> instances, Class<T> domainType) {
@@ -599,7 +589,7 @@ public class JdbcAggregateTemplate implements JdbcAggregateOperations {
 		return aggregateChange;
 	}
 
-	private <T> Iterable<T> triggerAfterConvert(Iterable<T> all) {
+	private <T> List<T> triggerAfterConvert(Iterable<T> all) {
 
 		List<T> result = new ArrayList<>();
 

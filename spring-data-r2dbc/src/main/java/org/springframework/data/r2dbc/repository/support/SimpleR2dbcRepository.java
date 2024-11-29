@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import org.springframework.data.relational.repository.query.RelationalEntityInfo
 import org.springframework.data.relational.repository.query.RelationalExampleMapper;
 import org.springframework.data.repository.query.FluentQuery;
 import org.springframework.data.repository.reactive.ReactiveSortingRepository;
+import org.springframework.data.support.ReactivePageableExecutionUtils;
 import org.springframework.data.util.Lazy;
 import org.springframework.data.util.Streamable;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -409,7 +410,11 @@ public class SimpleR2dbcRepository<T, ID> implements R2dbcRepository<T, ID> {
 				int limit = getLimit();
 				return createQuery(q -> {
 
-					Query queryToUse = q.offset(osp.getOffset());
+					Query queryToUse = q;
+
+					if (!osp.isInitial()) {
+						queryToUse = queryToUse.offset(osp.getOffset() + 1);
+					}
 
 					if (limit > 0) {
 						queryToUse = queryToUse.limit(limit + 1);
@@ -419,8 +424,7 @@ public class SimpleR2dbcRepository<T, ID> implements R2dbcRepository<T, ID> {
 				}).all() //
 						.collectList() //
 						.map(content -> {
-							return ScrollDelegate.createWindow(content, limit,
-									OffsetScrollPosition.positionFunction(osp.getOffset()));
+							return ScrollDelegate.createWindow(content, limit, osp.positionFunction());
 						});
 			}
 

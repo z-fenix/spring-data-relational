@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,12 +41,12 @@ class IterableOfEntryToMapConverter implements ConditionalConverter, Converter<I
 
 		source.forEach(element -> {
 
-			if (!(element instanceof Entry)) {
-				throw new IllegalArgumentException(String.format("Cannot convert %s to Map.Entry", element.getClass()));
+			if (element instanceof Entry entry) {
+				result.put(entry.getKey(), entry.getValue());
+				return;
 			}
 
-			Entry entry = (Entry) element;
-			result.put(entry.getKey(), entry.getValue());
+			throw new IllegalArgumentException(String.format("Cannot convert %s to Map.Entry", element.getClass()));
 		});
 
 		return result;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package org.springframework.data.r2dbc.repository.query;
 
-import static org.springframework.data.r2dbc.repository.query.ExpressionQuery.*;
-
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
+import org.springframework.data.expression.ValueEvaluationContext;
+import org.springframework.data.expression.ValueExpression;
 import org.springframework.data.r2dbc.core.ReactiveDataAccessStrategy;
 import org.springframework.data.r2dbc.dialect.BindTargetBinder;
 import org.springframework.data.relational.repository.query.RelationalParameterAccessor;
@@ -64,26 +64,40 @@ class ExpressionEvaluatingParameterBinder {
 	 * @param evaluator must not be {@literal null}.
 	 */
 	void bind(BindTarget bindTarget,
-			RelationalParameterAccessor parameterAccessor, R2dbcSpELExpressionEvaluator evaluator) {
+			RelationalParameterAccessor parameterAccessor, ValueEvaluationContext evaluationContext) {
 
 		Object[] values = parameterAccessor.getValues();
 		Parameters<?, ?> bindableParameters = parameterAccessor.getBindableParameters();
 
-		bindExpressions(bindTarget, evaluator);
+		bindExpressions(bindTarget, evaluationContext);
 		bindParameters(bindTarget, parameterAccessor.hasBindableNullValue(), values, bindableParameters);
 	}
 
 	private void bindExpressions(BindTarget bindSpec,
-			R2dbcSpELExpressionEvaluator evaluator) {
+			ValueEvaluationContext evaluationContext) {
 
 		BindTargetBinder binder = new BindTargetBinder(bindSpec);
-		for (ParameterBinding binding : expressionQuery.getBindings()) {
+
+		expressionQuery.getBindings().forEach((paramName, valueExpression) -> {
 
 			org.springframework.r2dbc.core.Parameter valueForBinding = getBindValue(
-					evaluator.evaluate(binding.getExpression()));
+					evaluate(valueExpression, evaluationContext));
 
-			binder.bind(binding.getParameterName(), valueForBinding);
+			binder.bind(paramName, valueForBinding);
+		});
+	}
+
+	private org.springframework.r2dbc.core.Parameter evaluate(ValueExpression expression,
+			ValueEvaluationContext context) {
+
+		Object value = expression.evaluate(context);
+		Class<?> valueType = value != null ? value.getClass() : null;
+
+		if (valueType == null) {
+			valueType = expression.getValueType(context);
 		}
+
+		return org.springframework.r2dbc.core.Parameter.fromOrEmpty(value, valueType == null ? Object.class : valueType);
 	}
 
 	private void bindParameters(BindTarget bindSpec,

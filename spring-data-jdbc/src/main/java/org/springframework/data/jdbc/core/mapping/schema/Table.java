@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.jdbc.core.mapping.schema;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.util.stream.Collectors;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ObjectUtils;
 
@@ -25,9 +26,10 @@ import org.springframework.util.ObjectUtils;
  * Models a Table for generating SQL for Schema generation.
  *
  * @author Kurt Niemi
+ * @author Evgenii Koba
  * @since 3.2
  */
-record Table(@Nullable String schema, String name, List<Column> keyColumns, List<Column> columns) {
+record Table(@Nullable String schema, String name, List<Column> columns, List<ForeignKey> foreignKeys) {
 
 	public Table(@Nullable String schema, String name) {
 		this(schema, name, new ArrayList<>(), new ArrayList<>());
@@ -35,6 +37,10 @@ record Table(@Nullable String schema, String name, List<Column> keyColumns, List
 
 	public Table(String name) {
 		this(null, name);
+	}
+
+	public List<Column> getIdColumns() {
+		return columns().stream().filter(Column::identity).collect(Collectors.toList());
 	}
 
 	@Override

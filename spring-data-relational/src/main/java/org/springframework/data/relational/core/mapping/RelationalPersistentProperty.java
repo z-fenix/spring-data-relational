@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,12 +45,6 @@ public interface RelationalPersistentProperty extends PersistentProperty<Relatio
 
 	@Override
 	RelationalPersistentEntity<?> getOwner();
-
-	/**
-	 * @deprecated use {@link #getReverseColumnName(RelationalPersistentEntity)} instead
-	 */
-	@Deprecated(since = "3.2", forRemoval = true)
-	SqlIdentifier getReverseColumnName(PersistentPropertyPathExtension path);
 
 	/**
 	 * @param owner the owning entity.

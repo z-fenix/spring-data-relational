@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.relational.core.sql.render;
 import org.springframework.data.relational.core.sql.Condition;
 import org.springframework.data.relational.core.sql.Expression;
 import org.springframework.data.relational.core.sql.Visitable;
+import org.springframework.data.relational.core.sql.When;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -26,6 +27,7 @@ import org.springframework.util.Assert;
  * delegate nested {@link Expression} and {@link Condition} rendering.
  *
  * @author Mark Paluch
+ * @author Sven Rienstra
  * @since 1.1
  */
 abstract class TypedSingleConditionRenderSupport<T extends Visitable> extends TypedSubtreeVisitor<T> {
@@ -40,14 +42,20 @@ abstract class TypedSingleConditionRenderSupport<T extends Visitable> extends Ty
 	@Override
 	Delegation enterNested(Visitable segment) {
 
-		if (segment instanceof Expression) {
-			ExpressionVisitor visitor = new ExpressionVisitor(context);
+		if (segment instanceof When) {
+			WhenVisitor visitor = new WhenVisitor(context);
 			current = visitor;
 			return Delegation.delegateTo(visitor);
 		}
 
 		if (segment instanceof Condition) {
 			ConditionVisitor visitor = new ConditionVisitor(context);
+			current = visitor;
+			return Delegation.delegateTo(visitor);
+		}
+
+		if (segment instanceof Expression) {
+			ExpressionVisitor visitor = new ExpressionVisitor(context);
 			current = visitor;
 			return Delegation.delegateTo(visitor);
 		}

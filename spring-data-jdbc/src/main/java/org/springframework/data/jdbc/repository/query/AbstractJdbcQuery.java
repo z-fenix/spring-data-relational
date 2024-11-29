@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.jdbc.repository.query;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.springframework.core.convert.converter.Converter;
@@ -72,45 +73,28 @@ public abstract class AbstractJdbcQuery implements RepositoryQuery {
 	}
 
 	/**
-	 * Creates a {@link JdbcQueryExecution} given a {@link JdbcQueryMethod}, and ac{@link ResultSetExtractor} or a
-	 * {@link RowMapper}. Prefers the given {@link ResultSetExtractor} over {@link RowMapper}.
-	 *
-	 * @param queryMethod must not be {@literal null}.
-	 * @param extractor must not be {@literal null}.
-	 * @param rowMapper must not be {@literal null}.
-	 * @return a JdbcQueryExecution appropriate for {@literal queryMethod}. Guaranteed to be not {@literal null}.
-	 * @deprecated use {@link #createReadingQueryExecution(ResultSetExtractor, RowMapper)} instead.
-	 */
-	@Deprecated(since = "3.1", forRemoval = true)
-	// a better name would be createReadingQueryExecution
-	protected JdbcQueryExecution<?> getQueryExecution(JdbcQueryMethod queryMethod,
-			@Nullable ResultSetExtractor<?> extractor, RowMapper<?> rowMapper) {
-		return createReadingQueryExecution(extractor, rowMapper);
-	}
-
-	/**
 	 * Creates a {@link JdbcQueryExecution} given a {@link ResultSetExtractor} or a {@link RowMapper}. Prefers the given
 	 * {@link ResultSetExtractor} over {@link RowMapper}.
 	 *
-	 * @param extractor must not be {@literal null}.
+	 * @param extractor may be {@literal null}.
 	 * @param rowMapper must not be {@literal null}.
 	 * @return a JdbcQueryExecution appropriate for {@literal queryMethod}. Guaranteed to be not {@literal null}.
 	 */
-	protected JdbcQueryExecution<?> createReadingQueryExecution(@Nullable ResultSetExtractor<?> extractor,
-			RowMapper<?> rowMapper) {
+	JdbcQueryExecution<?> createReadingQueryExecution(@Nullable ResultSetExtractor<?> extractor,
+			Supplier<RowMapper<?>> rowMapper) {
 
 		if (getQueryMethod().isCollectionQuery()) {
-			return extractor != null ? createSingleReadingQueryExecution(extractor) : collectionQuery(rowMapper);
+			return extractor != null ? createSingleReadingQueryExecution(extractor) : collectionQuery(rowMapper.get());
 		}
 
 		if (getQueryMethod().isStreamQuery()) {
-			return extractor != null ? createSingleReadingQueryExecution(extractor) : streamQuery(rowMapper);
+			return extractor != null ? createSingleReadingQueryExecution(extractor) : streamQuery(rowMapper.get());
 		}
 
-		return extractor != null ? createSingleReadingQueryExecution(extractor) : singleObjectQuery(rowMapper);
+		return extractor != null ? createSingleReadingQueryExecution(extractor) : singleObjectQuery(rowMapper.get());
 	}
 
-	protected JdbcQueryExecution<Object> createModifyingQueryExecutor() {
+	JdbcQueryExecution<Object> createModifyingQueryExecutor() {
 
 		return (query, parameters) -> {
 
@@ -171,7 +155,34 @@ public abstract class AbstractJdbcQuery implements RepositoryQuery {
 	 * @since 2.3
 	 */
 	public interface RowMapperFactory {
+
+		/**
+		 * Create a {@link RowMapper} based on the expected return type passed in as an argument.
+		 *
+		 * @param result must not be {@code null}.
+		 * @return a {@code RowMapper} producing instances of {@code result}.
+		 */
 		RowMapper<Object> create(Class<?> result);
+
+		/**
+		 * Obtain a {@code RowMapper} from some other source, typically a {@link org.springframework.beans.factory.BeanFactory}.
+		 *
+		 * @param reference must not be {@code null}.
+		 * @since 3.4
+		 */
+		default RowMapper<Object> getRowMapper(String reference) {
+			throw new UnsupportedOperationException("getRowMapper is not supported");
+		}
+
+		/**
+		 * Obtain a {@code ResultSetExtractor} from some other source, typically a {@link org.springframework.beans.factory.BeanFactory}.
+		 *
+		 * @param reference must not be {@code null}.
+		 * @since 3.4
+		 */
+		default ResultSetExtractor<Object> getResultSetExtractor(String reference) {
+			throw new UnsupportedOperationException("getResultSetExtractor is not supported");
+		}
 	}
 
 	/**

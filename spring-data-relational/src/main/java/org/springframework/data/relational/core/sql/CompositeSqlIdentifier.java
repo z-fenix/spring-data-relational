@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,12 +63,6 @@ class CompositeSqlIdentifier implements SqlIdentifier {
 		}
 
 		return stringJoiner.toString();
-	}
-
-	@Override
-	@Deprecated(since="3.1", forRemoval = true)
-	public String getReference(IdentifierProcessing processing) {
-		throw new UnsupportedOperationException("Composite SQL Identifiers can't be used for reference name retrieval");
 	}
 
 	@Override

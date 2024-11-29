@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -162,6 +162,22 @@ public interface R2dbcEntityOperations extends FluentR2dbcOperations {
 	/**
 	 * Execute a query for a {@link RowsFetchSpec}, given {@link PreparedOperation}. Any provided bindings within
 	 * {@link PreparedOperation} are applied to the underlying {@link DatabaseClient}. The query is issued as-is without
+	 * additional pre-processing such as named parameter expansion. Results of the query are mapped onto
+	 * {@code entityClass}.
+	 *
+	 * @param operation   the prepared operation wrapping a SQL query and bind parameters.
+	 * @param entityClass the entity type must not be {@literal null}.
+	 * @param resultType  the returned entity, type must not be {@literal null}.
+	 * @return a {@link RowsFetchSpec} ready to materialize.
+	 * @throws DataAccessException if there is any problem issuing the execution.
+	 * @since 3.2.1
+	 */
+	<T> RowsFetchSpec<T> query(PreparedOperation<?> operation, Class<?> entityClass, Class<T> resultType)
+			throws DataAccessException;
+
+	/**
+	 * Execute a query for a {@link RowsFetchSpec}, given {@link PreparedOperation}. Any provided bindings within
+	 * {@link PreparedOperation} are applied to the underlying {@link DatabaseClient}. The query is issued as-is without
 	 * additional pre-processing such as named parameter expansion. Results of the query are mapped using {@link Function
 	 * rowMapper}.
 	 *
@@ -233,6 +249,9 @@ public interface R2dbcEntityOperations extends FluentR2dbcOperations {
 	 */
 	<T> RowsFetchSpec<T> query(PreparedOperation<?> operation, Class<?> entityClass,
 			BiFunction<Row, RowMetadata, T> rowMapper) throws DataAccessException;
+
+	<T> RowsFetchSpec<T> getRowsFetchSpec(DatabaseClient.GenericExecuteSpec executeSpec, Class<?> entityType,
+			Class<T> resultType);
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with entities

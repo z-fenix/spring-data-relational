@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 the original author or authors.
+ * Copyright 2022-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import org.springframework.data.jdbc.support.JdbcUtil;
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.relational.core.conversion.IdValueSource;
-import org.springframework.data.relational.core.dialect.Dialect;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
@@ -47,14 +46,6 @@ import org.springframework.util.Assert;
 public class SqlParametersFactory {
 	private final RelationalMappingContext context;
 	private final JdbcConverter converter;
-
-	/**
-	 * @deprecated use {@link SqlParametersFactory(RelationalMappingContext, JdbcConverter)} instead.
-	 */
-	@Deprecated(since = "3.1", forRemoval = true)
-	public SqlParametersFactory(RelationalMappingContext context, JdbcConverter converter, Dialect dialect) {
-		this(context, converter);
-	}
 
 	/**
 	 * @since 3.1
@@ -256,7 +247,7 @@ public class SqlParametersFactory {
 			if (property.isEmbedded()) {
 
 				Object value = propertyAccessor.getProperty(property);
-				RelationalPersistentEntity<?> embeddedEntity = context.getPersistentEntity(property.getType());
+				RelationalPersistentEntity<?> embeddedEntity = context.getPersistentEntity(property.getTypeInformation());
 				SqlIdentifierParameterSource additionalParameters = getParameterSource((T) value,
 						(RelationalPersistentEntity<T>) embeddedEntity, prefix + property.getEmbeddedPrefix(), skipProperty);
 				parameters.addAll(additionalParameters);

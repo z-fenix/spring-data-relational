@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import org.springframework.util.Assert;
  * a {@link RelationalPersistentProperty} might refer to through a path expression in field names.
  *
  * @author Mark Paluch
+ * @author Chanhyeong Cho
  * @since 3.2
  */
 public class RowDocumentAccessor {
@@ -59,7 +60,6 @@ public class RowDocumentAccessor {
 	 * @param source
 	 */
 	public void putAll(RowDocument source) {
-
 		document.putAll(source);
 	}
 
@@ -108,10 +108,6 @@ public class RowDocumentAccessor {
 
 	String getColumnName(RelationalPersistentProperty prop) {
 		return prop.getColumnName().getReference();
-	}
-
-	public RowDocument document() {
-		return document;
 	}
 
 	@Override

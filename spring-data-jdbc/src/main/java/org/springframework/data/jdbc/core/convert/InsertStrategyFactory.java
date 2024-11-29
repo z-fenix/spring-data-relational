@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 the original author or authors.
+ * Copyright 2022-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,18 +39,6 @@ public class InsertStrategyFactory {
 
 		this.jdbcOperations = jdbcOperations;
 		this.dialect = dialect;
-	}
-
-	/**
-	 * Constructor with additional {@link BatchJdbcOperations} constructor.
-	 *
-	 * @deprecated since 3.2, use
-	 *             {@link InsertStrategyFactory#InsertStrategyFactory(NamedParameterJdbcOperations, Dialect)} instead.
-	 */
-	@Deprecated(since = "3.2")
-	public InsertStrategyFactory(NamedParameterJdbcOperations namedParameterJdbcOperations,
-			BatchJdbcOperations batchJdbcOperations, Dialect dialect) {
-		this(namedParameterJdbcOperations, dialect);
 	}
 
 	/**

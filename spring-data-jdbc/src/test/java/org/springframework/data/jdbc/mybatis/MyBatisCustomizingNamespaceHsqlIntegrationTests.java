@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,14 +41,9 @@ import org.springframework.data.jdbc.testing.EnabledOnDatabase;
 import org.springframework.data.jdbc.testing.IntegrationTest;
 import org.springframework.data.jdbc.testing.TestClass;
 import org.springframework.data.jdbc.testing.TestConfiguration;
-import org.springframework.data.relational.core.dialect.HsqlDbDialect;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Tests the integration for customizing the namespace with Mybatis.
@@ -118,8 +112,7 @@ public class MyBatisCustomizingNamespaceHsqlIntegrationTests {
 			RelationalMappingContext context = new JdbcMappingContext();
 			JdbcConverter converter = new MappingJdbcConverter(context, (Identifier, path) -> null);
 
-			MyBatisDataAccessStrategy strategy = new MyBatisDataAccessStrategy(sqlSession,
-					HsqlDbDialect.INSTANCE.getIdentifierProcessing());
+			MyBatisDataAccessStrategy strategy = new MyBatisDataAccessStrategy(sqlSession);
 
 			strategy.setNamespaceStrategy(new NamespaceStrategy() {
 				@Override

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -692,12 +692,13 @@ class PartTreeR2dbcQueryUnitTests {
 				.from(TABLE);
 	}
 
-	@Test // GH-475
+	@Test
+		// GH-475, GH-1687
 	void createsDtoProjectionQuery() throws Exception {
 
-		R2dbcQueryMethod queryMethod = getQueryMethod("findAsDtoProjectionBy");
+		R2dbcQueryMethod queryMethod = getQueryMethod("findAsDtoProjectionByAge", Integer.TYPE);
 		PartTreeR2dbcQuery r2dbcQuery = new PartTreeR2dbcQuery(queryMethod, operations, r2dbcConverter, dataAccessStrategy);
-		PreparedOperation<?> preparedOperation = createQuery(queryMethod, r2dbcQuery);
+		PreparedOperation<?> preparedOperation = createQuery(queryMethod, r2dbcQuery, 42);
 
 		PreparedOperationAssert.assertThat(preparedOperation) //
 				.selects("users.id", "users.first_name", "users.last_name", "users.date_of_birth", "users.age", "users.active") //
@@ -756,7 +757,7 @@ class PartTreeR2dbcQueryUnitTests {
 
 		R2dbcQueryMethod queryMethod = getQueryMethod("findByFirstName", Mono.class);
 		PartTreeR2dbcQuery r2dbcQuery = new PartTreeR2dbcQuery(queryMethod, operations, r2dbcConverter, dataAccessStrategy);
-		R2dbcParameterAccessor accessor = new R2dbcParameterAccessor(queryMethod, new Object[] { Mono.just("John") });
+		R2dbcParameterAccessor accessor = new R2dbcParameterAccessor(queryMethod, Mono.just("John"));
 
 		PreparedOperation<?> preparedOperation = createQuery(r2dbcQuery, accessor.resolveParameters().block());
 		BindTarget bindTarget = mock(BindTarget.class);
@@ -986,7 +987,7 @@ class PartTreeR2dbcQueryUnitTests {
 
 		Mono<OpenUserProjection> findOpenProjectionBy();
 
-		Mono<UserDtoProjection> findAsDtoProjectionBy();
+		Mono<UserDtoProjection> findAsDtoProjectionByAge(int age);
 
 		Mono<Integer> deleteByFirstName(String firstName);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2023 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -297,8 +297,7 @@ abstract class NamedParameterUtils {
 						}
 						k++;
 						Object entryItem = entryIter.next();
-						if (entryItem instanceof Object[]) {
-							Object[] expressionList = (Object[]) entryItem;
+						if (entryItem instanceof Object[] expressionList) {
 							actualSql.append('(');
 							for (int m = 0; m < expressionList.length; m++) {
 								if (m > 0) {
@@ -385,11 +384,11 @@ abstract class NamedParameterUtils {
 		public boolean equals(@Nullable Object o) {
 			if (this == o)
 				return true;
-			if (!(o instanceof ParameterHolder))
-				return false;
-			ParameterHolder that = (ParameterHolder) o;
-			return this.startIndex == that.startIndex && this.endIndex == that.endIndex
+			if (o instanceof ParameterHolder that) {
+				return this.startIndex == that.startIndex && this.endIndex == that.endIndex
 					&& Objects.equals(this.parameterName, that.parameterName);
+			}
+			return false;
 		}
 
 		@Override
@@ -520,8 +519,7 @@ abstract class NamedParameterUtils {
 
 						Object valueToBind = iterator.next();
 
-						if (valueToBind instanceof Object[]) {
-							Object[] objects = (Object[]) valueToBind;
+						if (valueToBind instanceof Object[] objects) {
 							for (Object object : objects) {
 								bind(target, markers, object);
 							}

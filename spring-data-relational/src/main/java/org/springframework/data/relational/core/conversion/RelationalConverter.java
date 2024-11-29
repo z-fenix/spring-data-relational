@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,12 @@
  */
 package org.springframework.data.relational.core.conversion;
 
-import java.util.function.Function;
-
 import org.springframework.core.convert.ConversionService;
-import org.springframework.data.mapping.Parameter;
 import org.springframework.data.mapping.PersistentEntity;
 import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.mapping.PersistentPropertyPathAccessor;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.mapping.model.EntityInstantiators;
-import org.springframework.data.mapping.model.ParameterValueProvider;
 import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.projection.EntityProjectionIntrospector;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
@@ -62,23 +58,6 @@ public interface RelationalConverter {
 	 * @return never {@literal null}
 	 */
 	MappingContext<? extends RelationalPersistentEntity<?>, ? extends RelationalPersistentProperty> getMappingContext();
-
-	/**
-	 * Create a new instance of {@link PersistentEntity} given {@link ParameterValueProvider} to obtain constructor
-	 * properties.
-	 *
-	 * @param entity the kind of entity to create. Must not be {@code null}.
-	 * @param parameterValueProvider a function that provides the value to pass to a constructor, given a
-	 *          {@link Parameter}. Must not be {@code null}.
-	 * @param <T> the type of entity to create.
-	 * @return the instantiated entity. Guaranteed to be not {@code null}.
-	 * @deprecated since 3.2, use {@link #read} method instead.
-	 */
-	@Deprecated(since = "3.2")
-	default <T> T createInstance(PersistentEntity<T, RelationalPersistentProperty> entity,
-			Function<Parameter<?, RelationalPersistentProperty>, Object> parameterValueProvider) {
-		throw new UnsupportedOperationException("Not supported anymore. Use read(…) instead.");
-	}
 
 	/**
 	 * Return a {@link PersistentPropertyAccessor} to access property values of the {@code instance}.
@@ -143,6 +122,5 @@ public interface RelationalConverter {
 	 */
 	@Nullable
 	Object writeValue(@Nullable Object value, TypeInformation<?> type);
-
 
 }

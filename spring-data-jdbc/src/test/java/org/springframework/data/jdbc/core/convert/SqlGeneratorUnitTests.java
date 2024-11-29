@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import org.springframework.data.relational.core.dialect.SqlServerDialect;
 import org.springframework.data.relational.core.mapping.AggregatePath;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.DefaultNamingStrategy;
+import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
@@ -341,6 +342,42 @@ class SqlGeneratorUnitTests {
 				"LIMIT 10");
 	}
 
+	@Test // GH-1919
+	void selectByQuery() {
+
+		Query query = Query.query(Criteria.where("id").is(23L));
+
+		String sql = sqlGenerator.selectByQuery(query, new MapSqlParameterSource());
+
+		assertThat(sql).contains( //
+				"SELECT", //
+				"FROM dummy_entity", //
+				"LEFT OUTER JOIN referenced_entity ref ON ref.dummy_entity = dummy_entity.id1", //
+				"LEFT OUTER JOIN second_level_referenced_entity ref_further ON ref_further.referenced_entity = ref.x_l1id", //
+				"WHERE dummy_entity.id1 = :id1" //
+		);
+	}
+
+	@Test // GH-1919
+	void selectBySortedQuery() {
+
+		Query query = Query.query(Criteria.where("id").is(23L)) //
+				.sort(Sort.by(Sort.Order.asc("id")));
+
+		String sql = sqlGenerator.selectByQuery(query, new MapSqlParameterSource());
+
+		assertThat(sql).contains( //
+				"SELECT", //
+				"FROM dummy_entity", //
+				"LEFT OUTER JOIN referenced_entity ref ON ref.dummy_entity = dummy_entity.id1", //
+				"LEFT OUTER JOIN second_level_referenced_entity ref_further ON ref_further.referenced_entity = ref.x_l1id", //
+				"WHERE dummy_entity.id1 = :id1", //
+				"ORDER BY dummy_entity.id1 ASC" //
+		);
+		assertThat(sql).containsOnlyOnce("LEFT OUTER JOIN referenced_entity ref ON ref.dummy_entity = dummy_entity.id1");
+		assertThat(sql).containsOnlyOnce("LEFT OUTER JOIN second_level_referenced_entity ref_further ON ref_further.referenced_entity = ref.x_l1id");
+	}
+
 	@Test // DATAJDBC-131, DATAJDBC-111
 	void findAllByProperty() {
 
@@ -388,7 +425,8 @@ class SqlGeneratorUnitTests {
 	void findAllByPropertyWithKey() {
 
 		// this would get called when ListParent is th element type of a Map
-		String sql = sqlGenerator.getFindAllByProperty(BACKREF, new AggregatePath.ColumnInfo(unquoted("key-column"),unquoted("key-column")), false);
+		String sql = sqlGenerator.getFindAllByProperty(BACKREF,
+				new AggregatePath.ColumnInfo(unquoted("key-column"), unquoted("key-column")), false);
 
 		assertThat(sql).isEqualTo("SELECT dummy_entity.id1 AS id1, dummy_entity.x_name AS x_name, " //
 				+ "dummy_entity.x_other AS x_other, " //
@@ -451,9 +489,9 @@ class SqlGeneratorUnitTests {
 		Identifier emptyIdentifier = Identifier.of(EMPTY, 0, Object.class);
 		assertThatThrownBy(() -> sqlGenerator.getFindAllByProperty(emptyIdentifier,
 				new AggregatePath.ColumnInfo(unquoted("key-column"), unquoted("key-column")), false)) //
-						.isInstanceOf(IllegalArgumentException.class) //
-						.hasMessageContaining(
-								"An empty SqlIdentifier can't be used in condition. Make sure that all composite primary keys are defined in the query");
+				.isInstanceOf(IllegalArgumentException.class) //
+				.hasMessageContaining(
+						"An empty SqlIdentifier can't be used in condition. Make sure that all composite primary keys are defined in the query");
 	}
 
 	@Test // DATAJDBC-219
@@ -625,18 +663,18 @@ class SqlGeneratorUnitTests {
 
 		assertThat(
 				createSqlGenerator(Chain4.class).createDeleteByPath(getPath("chain3.chain2.chain1.chain0", Chain4.class))) //
-						.isEqualTo("DELETE FROM chain0 " + //
-								"WHERE chain0.chain1 IN (" + //
-								"SELECT chain1.x_one " + //
-								"FROM chain1 " + //
-								"WHERE chain1.chain2 IN (" + //
-								"SELECT chain2.x_two " + //
-								"FROM chain2 " + //
-								"WHERE chain2.chain3 IN (" + //
-								"SELECT chain3.x_three " + //
-								"FROM chain3 " + //
-								"WHERE chain3.chain4 = :rootId" + //
-								")))");
+				.isEqualTo("DELETE FROM chain0 " + //
+						"WHERE chain0.chain1 IN (" + //
+						"SELECT chain1.x_one " + //
+						"FROM chain1 " + //
+						"WHERE chain1.chain2 IN (" + //
+						"SELECT chain2.x_two " + //
+						"FROM chain2 " + //
+						"WHERE chain2.chain3 IN (" + //
+						"SELECT chain3.x_three " + //
+						"FROM chain3 " + //
+						"WHERE chain3.chain4 = :rootId" + //
+						")))");
 	}
 
 	@Test // DATAJDBC-359
@@ -644,7 +682,7 @@ class SqlGeneratorUnitTests {
 
 		assertThat(createSqlGenerator(NoIdChain4.class)
 				.createDeleteByPath(getPath("chain3.chain2.chain1.chain0", NoIdChain4.class))) //
-						.isEqualTo("DELETE FROM no_id_chain0 WHERE no_id_chain0.no_id_chain4 = :rootId");
+				.isEqualTo("DELETE FROM no_id_chain0 WHERE no_id_chain0.no_id_chain4 = :rootId");
 	}
 
 	@Test // DATAJDBC-359
@@ -652,16 +690,16 @@ class SqlGeneratorUnitTests {
 
 		assertThat(createSqlGenerator(IdIdNoIdChain.class)
 				.createDeleteByPath(getPath("idNoIdChain.chain4.chain3.chain2.chain1.chain0", IdIdNoIdChain.class))) //
-						.isEqualTo( //
-								"DELETE FROM no_id_chain0 " //
-										+ "WHERE no_id_chain0.no_id_chain4 IN (" //
-										+ "SELECT no_id_chain4.x_four " //
-										+ "FROM no_id_chain4 " //
-										+ "WHERE no_id_chain4.id_no_id_chain IN (" //
-										+ "SELECT id_no_id_chain.x_id " //
-										+ "FROM id_no_id_chain " //
-										+ "WHERE id_no_id_chain.id_id_no_id_chain = :rootId" //
-										+ "))");
+				.isEqualTo( //
+						"DELETE FROM no_id_chain0 " //
+								+ "WHERE no_id_chain0.no_id_chain4 IN (" //
+								+ "SELECT no_id_chain4.x_four " //
+								+ "FROM no_id_chain4 " //
+								+ "WHERE no_id_chain4.id_no_id_chain IN (" //
+								+ "SELECT id_no_id_chain.x_id " //
+								+ "FROM id_no_id_chain " //
+								+ "WHERE id_no_id_chain.id_id_no_id_chain = :rootId" //
+								+ "))");
 	}
 
 	@Test // DATAJDBC-340
@@ -926,11 +964,21 @@ class SqlGeneratorUnitTests {
 				"WHERE referenced_entity.parentId");
 	}
 
+	@Test // GH-1865
+	void mappingMapKeyToChildShouldNotResultInDuplicateColumn() {
+
+		SqlGenerator sqlGenerator = createSqlGenerator(Child.class);
+		String sql = sqlGenerator.getFindAllByProperty(Identifier.of(unquoted("parent"), 23, Parent.class),
+				context.getAggregatePath(getPath("children", Parent.class)).getTableInfo().qualifierColumnInfo(), false);
+
+		assertThat(sql).containsOnlyOnce("child.NICK_NAME AS NICK_NAME");
+	}
+
 	@Nullable
 	private SqlIdentifier getAlias(Object maybeAliased) {
 
-		if (maybeAliased instanceof Aliased) {
-			return ((Aliased) maybeAliased).getAlias();
+		if (maybeAliased instanceof Aliased aliased) {
+			return aliased.getAlias();
 		}
 		return null;
 	}
@@ -1116,5 +1164,11 @@ class SqlGeneratorUnitTests {
 	static class IdIdNoIdChain {
 		@Id Long id;
 		IdNoIdChain idNoIdChain;
+	}
+
+	record Parent(@Id Long id, String name, @MappedCollection(keyColumn = "NICK_NAME") Map<String, Child> children) {
+	}
+
+	record Child(@Column("NICK_NAME") String nickName, String name) {
 	}
 }

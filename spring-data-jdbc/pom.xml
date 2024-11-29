@@ -6,7 +6,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<artifactId>spring-data-jdbc</artifactId>
-	<version>3.2.0-SNAPSHOT</version>
+	<version>3.5.0-SNAPSHOT</version>
 
 	<name>Spring Data JDBC</name>
 	<description>Spring Data module for JDBC repositories.</description>
@@ -15,7 +15,7 @@
 	<parent>
 		<groupId>org.springframework.data</groupId>
 		<artifactId>spring-data-relational-parent</artifactId>
-		<version>3.2.0-SNAPSHOT</version>
+		<version>3.5.0-SNAPSHOT</version>
 	</parent>
 
 	<properties>
@@ -148,7 +148,7 @@
 
 		<dependency>
 			<groupId>com.oracle.database.jdbc</groupId>
-			<artifactId>ojdbc8</artifactId>
+			<artifactId>ojdbc11</artifactId>
 			<version>${oracle.version}</version>
 			<scope>test</scope>
 		</dependency>
@@ -229,10 +229,16 @@
 
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>oracle-xe</artifactId>
+			<artifactId>oracle-free</artifactId>
 			<scope>test</scope>
 		</dependency>
 
+		<dependency>
+			<groupId>com.zaxxer</groupId>
+			<artifactId>HikariCP</artifactId>
+			<version>${hikari.version}</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

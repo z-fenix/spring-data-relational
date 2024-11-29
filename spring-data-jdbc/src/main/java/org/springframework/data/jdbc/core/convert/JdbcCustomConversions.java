@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,11 @@
  */
 package org.springframework.data.jdbc.core.convert;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.converter.GenericConverter.ConvertiblePair;
-import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.jdbc.core.mapping.JdbcSimpleTypes;
 
@@ -39,21 +36,8 @@ import org.springframework.data.jdbc.core.mapping.JdbcSimpleTypes;
  */
 public class JdbcCustomConversions extends CustomConversions {
 
-	private static final Collection<Object> STORE_CONVERTERS;
-
-	static {
-
-		List<Object> converters = new ArrayList<>(Jsr310TimestampBasedConverters.getConvertersToRegister());
-
-		converters
-				.addAll(AggregateReferenceConverters.getConvertersToRegister(DefaultConversionService.getSharedInstance()));
-
-		STORE_CONVERTERS = Collections.unmodifiableCollection(converters);
-
-	}
-
-	private static final StoreConversions STORE_CONVERSIONS = StoreConversions.of(JdbcSimpleTypes.HOLDER,
-			STORE_CONVERTERS);
+	private static final Collection<Object> STORE_CONVERTERS = Collections
+			.unmodifiableCollection(Jsr310TimestampBasedConverters.getConvertersToRegister());
 
 	/**
 	 * Creates an empty {@link JdbcCustomConversions} object.
@@ -69,12 +53,7 @@ public class JdbcCustomConversions extends CustomConversions {
 	 * @param converters must not be {@literal null}.
 	 */
 	public JdbcCustomConversions(List<?> converters) {
-
-		super(new ConverterConfiguration( //
-				STORE_CONVERSIONS, //
-				converters, //
-				JdbcCustomConversions::excludeConversionsBetweenDateAndJsr310Types //
-		));
+		super(constructConverterConfiguration(converters));
 	}
 
 	/**
@@ -102,6 +81,16 @@ public class JdbcCustomConversions extends CustomConversions {
 	public JdbcCustomConversions(ConverterConfiguration converterConfiguration) {
 		super(converterConfiguration);
 	}
+
+	private static ConverterConfiguration constructConverterConfiguration(List<?> converters) {
+
+		return new ConverterConfiguration( //
+				StoreConversions.of(JdbcSimpleTypes.HOLDER, STORE_CONVERTERS), //
+				converters, //
+				JdbcCustomConversions::excludeConversionsBetweenDateAndJsr310Types //
+		);
+	}
+
 
 	/**
 	 * Obtain a read only copy of default store converters.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ import static org.assertj.core.api.Assertions.*;
 import liquibase.change.AddColumnConfig;
 import liquibase.change.ColumnConfig;
 import liquibase.change.core.AddColumnChange;
+import liquibase.change.core.AddForeignKeyConstraintChange;
 import liquibase.change.core.DropColumnChange;
+import liquibase.change.core.DropForeignKeyConstraintChange;
 import liquibase.change.core.DropTableChange;
 import liquibase.changelog.ChangeSet;
 import liquibase.changelog.DatabaseChangeLog;
@@ -41,6 +43,7 @@ import org.springframework.core.io.ClassRelativeResourceLoader;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.jdbc.core.mapping.schema.LiquibaseChangeSetWriter.ChangeSetMetadata;
+import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.util.Predicates;
@@ -52,6 +55,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
  * Integration tests for {@link LiquibaseChangeSetWriter}.
  *
  * @author Mark Paluch
+ * @author Evgenii Koba
  */
 class LiquibaseChangeSetWriterIntegrationTests {
 
@@ -202,6 +206,93 @@ class LiquibaseChangeSetWriterIntegrationTests {
 		});
 	}
 
+	@Test // GH-1599
+	void dropAndCreateTableWithRightOrderOfFkChanges() {
+
+		withEmbeddedDatabase("drop-and-create-table-with-fk.sql", c -> {
+
+			H2Database h2Database = new H2Database();
+			h2Database.setConnection(new JdbcConnection(c));
+
+			LiquibaseChangeSetWriter writer = new LiquibaseChangeSetWriter(contextOf(GroupOfPersons.class));
+			writer.setDropTableFilter(Predicates.isTrue());
+
+			ChangeSet changeSet = writer.createChangeSet(ChangeSetMetadata.create(), h2Database, new DatabaseChangeLog());
+
+			assertThat(changeSet.getChanges()).hasSize(4);
+			assertThat(changeSet.getChanges().get(0)).isInstanceOf(DropForeignKeyConstraintChange.class);
+			assertThat(changeSet.getChanges().get(3)).isInstanceOf(AddForeignKeyConstraintChange.class);
+
+			DropForeignKeyConstraintChange dropForeignKey = (DropForeignKeyConstraintChange) changeSet.getChanges().get(0);
+			assertThat(dropForeignKey.getConstraintName()).isEqualToIgnoringCase("fk_to_drop");
+			assertThat(dropForeignKey.getBaseTableName()).isEqualToIgnoringCase("table_to_drop");
+
+			AddForeignKeyConstraintChange addForeignKey = (AddForeignKeyConstraintChange) changeSet.getChanges().get(3);
+			assertThat(addForeignKey.getBaseTableName()).isEqualToIgnoringCase("person");
+			assertThat(addForeignKey.getBaseColumnNames()).isEqualToIgnoringCase("group_id");
+			assertThat(addForeignKey.getReferencedTableName()).isEqualToIgnoringCase("group_of_persons");
+			assertThat(addForeignKey.getReferencedColumnNames()).isEqualToIgnoringCase("id");
+		});
+	}
+
+	@Test // GH-1599
+	void dropAndCreateFkInRightOrder() {
+
+		withEmbeddedDatabase("drop-and-create-fk.sql", c -> {
+
+			H2Database h2Database = new H2Database();
+			h2Database.setConnection(new JdbcConnection(c));
+
+			LiquibaseChangeSetWriter writer = new LiquibaseChangeSetWriter(contextOf(GroupOfPersons.class));
+			writer.setDropColumnFilter((s, s2) -> true);
+
+			ChangeSet changeSet = writer.createChangeSet(ChangeSetMetadata.create(), h2Database, new DatabaseChangeLog());
+
+			assertThat(changeSet.getChanges()).hasSize(3);
+			assertThat(changeSet.getChanges().get(0)).isInstanceOf(DropForeignKeyConstraintChange.class);
+			assertThat(changeSet.getChanges().get(2)).isInstanceOf(AddForeignKeyConstraintChange.class);
+
+			DropForeignKeyConstraintChange dropForeignKey = (DropForeignKeyConstraintChange) changeSet.getChanges().get(0);
+			assertThat(dropForeignKey.getConstraintName()).isEqualToIgnoringCase("fk_to_drop");
+			assertThat(dropForeignKey.getBaseTableName()).isEqualToIgnoringCase("person");
+
+			AddForeignKeyConstraintChange addForeignKey = (AddForeignKeyConstraintChange) changeSet.getChanges().get(2);
+			assertThat(addForeignKey.getBaseTableName()).isEqualToIgnoringCase("person");
+			assertThat(addForeignKey.getBaseColumnNames()).isEqualToIgnoringCase("group_id");
+			assertThat(addForeignKey.getReferencedTableName()).isEqualToIgnoringCase("group_of_persons");
+			assertThat(addForeignKey.getReferencedColumnNames()).isEqualToIgnoringCase("id");
+		});
+	}
+
+	@Test // GH-1599
+	void fieldForFkWillBeCreated() {
+
+		withEmbeddedDatabase("create-fk-with-field.sql", c -> {
+
+			H2Database h2Database = new H2Database();
+			h2Database.setConnection(new JdbcConnection(c));
+
+			LiquibaseChangeSetWriter writer = new LiquibaseChangeSetWriter(contextOf(GroupOfPersons.class));
+
+			ChangeSet changeSet = writer.createChangeSet(ChangeSetMetadata.create(), h2Database, new DatabaseChangeLog());
+
+			assertThat(changeSet.getChanges()).hasSize(2);
+			assertThat(changeSet.getChanges().get(0)).isInstanceOf(AddColumnChange.class);
+			assertThat(changeSet.getChanges().get(1)).isInstanceOf(AddForeignKeyConstraintChange.class);
+
+			AddColumnChange addColumn = (AddColumnChange) changeSet.getChanges().get(0);
+			assertThat(addColumn.getTableName()).isEqualToIgnoringCase("person");
+			assertThat(addColumn.getColumns()).hasSize(1);
+			assertThat(addColumn.getColumns()).extracting(AddColumnConfig::getName).containsExactly("group_id");
+
+			AddForeignKeyConstraintChange addForeignKey = (AddForeignKeyConstraintChange) changeSet.getChanges().get(1);
+			assertThat(addForeignKey.getBaseTableName()).isEqualToIgnoringCase("person");
+			assertThat(addForeignKey.getBaseColumnNames()).isEqualToIgnoringCase("group_id");
+			assertThat(addForeignKey.getReferencedTableName()).isEqualToIgnoringCase("group_of_persons");
+			assertThat(addForeignKey.getReferencedColumnNames()).isEqualToIgnoringCase("id");
+		});
+	}
+
 	RelationalMappingContext contextOf(Class<?>... classes) {
 
 		RelationalMappingContext context = new RelationalMappingContext();
@@ -244,6 +335,12 @@ class LiquibaseChangeSetWriterIntegrationTests {
 	static class DifferentPerson {
 		@Id int my_id;
 		String hello;
+	}
+
+	@Table
+	static class GroupOfPersons {
+		@Id int id;
+		@MappedCollection(idColumn = "group_id") Set<Person> persons;
 	}
 
 }

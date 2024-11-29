@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,17 @@ public abstract class Conditions {
 	 */
 	public static Condition nest(Condition condition) {
 		return new NestedCondition(condition);
+	}
+
+	/**
+	 * Creates a NOT {@link Condition} that reverses the condition.
+	 *
+	 * @param condition the condition to {@code NOT}.
+	 * @return a NOT {@link Condition}.
+	 * @since 3.1.6
+	 */
+	public static Condition not(Condition condition) {
+		return new Not(condition);
 	}
 
 	/**

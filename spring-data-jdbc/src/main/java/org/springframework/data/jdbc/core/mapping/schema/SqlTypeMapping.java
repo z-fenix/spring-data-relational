@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ import org.springframework.util.ObjectUtils;
  *
  * @author Kurt Niemi
  * @author Mark Paluch
+ * @author Evgenii Koba
+ * @author Jens Schauder
  * @since 3.2
  */
 @FunctionalInterface
@@ -39,6 +41,20 @@ public interface SqlTypeMapping {
 	 */
 	@Nullable
 	String getColumnType(RelationalPersistentProperty property);
+
+	/**
+	 * Determines a column type for Class.
+	 *
+	 * @param type class for which the type should be determined.
+	 * @return the SQL type to use, such as {@code VARCHAR} or {@code NUMERIC}. Can be {@literal null} if the strategy
+	 *         cannot provide a column type.
+	 *
+	 * @since 3.3
+	 */
+	@Nullable
+	default String getColumnType(Class<?> type) {
+		return null;
+	}
 
 	/**
 	 * Returns the required column type for a persistent property or throws {@link IllegalArgumentException} if the type

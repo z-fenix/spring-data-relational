@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,17 +81,11 @@ public class SqlServerDialect extends AbstractDialect {
 
 		@Override
 		public String getLock(LockOptions lockOptions) {
-			switch (lockOptions.getLockMode()) {
-
-				case PESSIMISTIC_WRITE:
-					return "WITH (UPDLOCK, ROWLOCK)";
-
-				case PESSIMISTIC_READ:
-					return "WITH (HOLDLOCK, ROWLOCK)";
-
-				default:
-					return "";
-			}
+			
+			return switch (lockOptions.getLockMode()) {
+				case PESSIMISTIC_WRITE -> "WITH (UPDLOCK, ROWLOCK)";
+				case PESSIMISTIC_READ -> "WITH (HOLDLOCK, ROWLOCK)";
+			};
 		}
 
 		@Override

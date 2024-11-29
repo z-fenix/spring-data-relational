@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,14 @@ import org.springframework.data.relational.core.dialect.RenderContextFactory;
 import org.springframework.data.relational.core.sql.*;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
+
 /**
  * Unit tests for {@link SqlRenderer}.
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Sven Rienstra
  */
 class SelectRendererUnitTests {
 
@@ -149,7 +152,8 @@ class SelectRendererUnitTests {
 
 		Select select = Select.builder().select(employee.column("id"), department.column("name")) //
 				.from(employee) //
-				.join(department, Join.JoinType.FULL_OUTER_JOIN).on(employee.column("department_id")).equals(department.column("id")) //
+				.join(department, Join.JoinType.FULL_OUTER_JOIN).on(employee.column("department_id"))
+				.equals(department.column("id")) //
 				.build();
 
 		assertThat(SqlRenderer.toString(select)).isEqualTo("SELECT employee.id, department.name FROM employee "
@@ -253,11 +257,9 @@ class SelectRendererUnitTests {
 		Table merchantCustomers = Table.create("merchants_customers");
 		Table customerDetails = Table.create("customer_details");
 
-		Select innerSelect = Select.builder()
-				.select(customerDetails.column("cd_user_id"))
-				.from(customerDetails).join(merchantCustomers)
-				.on(merchantCustomers.column("mc_user_id").isEqualTo(customerDetails.column("cd_user_id")))
-				.build();
+		Select innerSelect = Select.builder().select(customerDetails.column("cd_user_id")).from(customerDetails)
+				.join(merchantCustomers)
+				.on(merchantCustomers.column("mc_user_id").isEqualTo(customerDetails.column("cd_user_id"))).build();
 
 		InlineQuery innerTable = InlineQuery.create(innerSelect, "inner");
 
@@ -285,8 +287,7 @@ class SelectRendererUnitTests {
 
 		Select innerSelectOne = Select.builder()
 				.select(employee.column("id").as("empId"), employee.column("department_Id"), employee.column("name"))
-				.from(employee)
-				.build();
+				.from(employee).build();
 		Select innerSelectTwo = Select.builder().select(department.column("id"), department.column("name")).from(department)
 				.build();
 
@@ -413,6 +414,29 @@ class SelectRendererUnitTests {
 
 		assertThat(SqlRenderer.toString(select))
 				.isEqualTo("SELECT foo.bar FROM foo WHERE foo.bar IN (SELECT floo.bah FROM floo)");
+	}
+
+	@Test // GH-1831
+	void shouldRenderSimpleFunctionWithSubselect() {
+
+		Table foo = SQL.table("foo");
+
+		Table floo = SQL.table("floo");
+		Column bah = floo.column("bah");
+
+
+		Select subselect = Select.builder().select(bah).from(floo).build();
+
+		SimpleFunction func = SimpleFunction.create("func", List.of(SubselectExpression.of(subselect)));
+
+		Select select = Select.builder() //
+				.select(func.as("alias")) //
+				.from(foo) //
+				.where(Conditions.isEqual(func, SQL.literalOf(23))) //
+				.build();
+
+		assertThat(SqlRenderer.toString(select))
+				.isEqualTo("SELECT func(SELECT floo.bah FROM floo) AS alias FROM foo WHERE func(SELECT floo.bah FROM floo) = 23");
 	}
 
 	@Test // DATAJDBC-309
@@ -631,8 +655,76 @@ class SelectRendererUnitTests {
 				.build();
 
 		String rendered = SqlRenderer.toString(select);
-		assertThat(rendered)
-				.isEqualTo("SELECT table.name AS alias FROM table");
+		assertThat(rendered).isEqualTo("SELECT table.name AS alias FROM table");
+	}
+
+	@Test // GH-1653
+	void notOfNested() {
+
+		Table table = SQL.table("atable");
+
+		Select select = StatementBuilder.select(table.asterisk()).from(table).where(Conditions.nest(
+				table.column("id").isEqualTo(Expressions.just("1")).and(table.column("id").isEqualTo(Expressions.just("2"))))
+				.not()).build();
+		String sql = SqlRenderer.toString(select);
+
+		assertThat(sql).isEqualTo("SELECT atable.* FROM atable WHERE NOT (atable.id = 1 AND atable.id = 2)");
+
+		select = StatementBuilder.select(table.asterisk()).from(table).where(Conditions.not(Conditions.nest(
+				table.column("id").isEqualTo(Expressions.just("1")).and(table.column("id").isEqualTo(Expressions.just("2"))))))
+				.build();
+		sql = SqlRenderer.toString(select);
+
+		assertThat(sql).isEqualTo("SELECT atable.* FROM atable WHERE NOT (atable.id = 1 AND atable.id = 2)");
+	}
+
+	@Test // GH-1945
+	void notOfTrue() {
+
+		Select selectFalse = Select.builder().select(Expressions.just("*")).from("test_table")
+				.where(Conditions.just("true").not()).build();
+		String renderSelectFalse = SqlRenderer.create().render(selectFalse);
+
+		assertThat(renderSelectFalse).isEqualTo("SELECT * FROM test_table WHERE NOT true");
+	}
+
+	@Test // GH-1945
+	void notOfNestedTrue() {
+
+		Select selectFalseNested = Select.builder().select(Expressions.just("*")).from("test_table")
+				.where(Conditions.nest(Conditions.just("true")).not()).build();
+		String renderSelectFalseNested = SqlRenderer.create().render(selectFalseNested);
+
+		assertThat(renderSelectFalseNested).isEqualTo("SELECT * FROM test_table WHERE NOT (true)");
+	}
+
+	@Test // GH-1651
+	void asteriskOfAliasedTableUsesAlias() {
+
+		Table employee = SQL.table("employee").as("e");
+		Select select = Select.builder().select(employee.asterisk()).select(employee.column("id")).from(employee).build();
+
+		String rendered = SqlRenderer.toString(select);
+
+		assertThat(rendered).isEqualTo("SELECT e.*, e.id FROM employee e");
+	}
+
+	@Test
+	void rendersCaseExpression() {
+
+		Table table = SQL.table("table");
+		Column column = table.column("name");
+
+		CaseExpression caseExpression = CaseExpression.create(When.when(column.isNull(), SQL.literalOf(1))) //
+				.when(When.when(column.isNotNull(), column)) //
+				.elseExpression(SQL.literalOf(3));
+
+		Select select = StatementBuilder.select(caseExpression) //
+				.from(table) //
+				.build();
+
+		String rendered = SqlRenderer.toString(select);
+		assertThat(rendered).isEqualTo("SELECT CASE WHEN table.name IS NULL THEN 1 WHEN table.name IS NOT NULL THEN table.name ELSE 3 END FROM table");
 	}
 
 	/**
@@ -650,8 +742,8 @@ class SelectRendererUnitTests {
 		void renderEmptyOver() {
 
 			Select select = StatementBuilder.select( //
-					AnalyticFunction.create("MAX", salary) //
-			) //
+							AnalyticFunction.create("MAX", salary) //
+					) //
 					.from(employee) //
 					.build();
 
@@ -736,8 +828,7 @@ class SelectRendererUnitTests {
 
 			String rendered = SqlRenderer.toString(select);
 
-			assertThat(rendered).isEqualTo(
-					"SELECT ROW_NUMBER() OVER(PARTITION BY employee.department) FROM employee");
+			assertThat(rendered).isEqualTo("SELECT ROW_NUMBER() OVER(PARTITION BY employee.department) FROM employee");
 		}
 	}
 }

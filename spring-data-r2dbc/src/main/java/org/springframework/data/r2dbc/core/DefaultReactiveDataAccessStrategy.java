@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ import org.springframework.data.r2dbc.mapping.R2dbcMappingContext;
 import org.springframework.data.r2dbc.query.UpdateMapper;
 import org.springframework.data.r2dbc.support.ArrayUtils;
 import org.springframework.data.relational.core.dialect.ArrayColumns;
+import org.springframework.data.relational.core.dialect.Dialect;
 import org.springframework.data.relational.core.dialect.RenderContextFactory;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
@@ -308,6 +309,14 @@ public class DefaultReactiveDataAccessStrategy implements ReactiveDataAccessStra
 	@Override
 	public String renderForGeneratedValues(SqlIdentifier identifier) {
 		return dialect.renderForGeneratedValues(identifier);
+	}
+
+	/**
+	 * @since 3.4
+	 */
+	@Override
+	public Dialect getDialect() {
+		return dialect;
 	}
 
 	private RelationalPersistentEntity<?> getRequiredPersistentEntity(Class<?> typeToRead) {

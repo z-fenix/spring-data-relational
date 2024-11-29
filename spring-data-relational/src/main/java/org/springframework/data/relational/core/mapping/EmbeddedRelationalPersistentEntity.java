@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.relational.core.mapping;
 import java.lang.annotation.Annotation;
 import java.util.Iterator;
 
+import org.springframework.core.env.Environment;
 import org.springframework.data.mapping.*;
 import org.springframework.data.mapping.model.PersistentPropertyAccessorFactory;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
@@ -87,6 +88,11 @@ class EmbeddedRelationalPersistentEntity<T> implements RelationalPersistentEntit
 	@Override
 	public void setPersistentPropertyAccessorFactory(PersistentPropertyAccessorFactory factory) {
 		delegate.setPersistentPropertyAccessorFactory(factory);
+	}
+
+	@Override
+	public void setEnvironment(Environment environment) {
+		delegate.setEnvironment(environment);
 	}
 
 	@Override
@@ -190,12 +196,16 @@ class EmbeddedRelationalPersistentEntity<T> implements RelationalPersistentEntit
 
 	@Override
 	public void doWithAssociations(AssociationHandler<RelationalPersistentProperty> handler) {
-		delegate.doWithAssociations(handler);
+		delegate.doWithAssociations((AssociationHandler<RelationalPersistentProperty>) association -> {
+			handler.doWithAssociation(new Association<>(wrap(association.getInverse()), wrap(association.getObverse())));
+		});
 	}
 
 	@Override
 	public void doWithAssociations(SimpleAssociationHandler handler) {
-		delegate.doWithAssociations(handler);
+		delegate.doWithAssociations((AssociationHandler<RelationalPersistentProperty>) association -> {
+			handler.doWithAssociation(new Association<>(wrap(association.getInverse()), wrap(association.getObverse())));
+		});
 	}
 
 	@Override

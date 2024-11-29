@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 	protected abstract DataSource createDataSource();
 
 	/**
-	 * Returns the the CREATE TABLE statement for table {@code legoset} with the following three columns:
+	 * Returns the CREATE TABLE statement for table {@code legoset} with the following three columns:
 	 * <ul>
 	 * <li>id integer (primary key), not null, auto-increment</li>
 	 * <li>name varchar(255), nullable</li>
@@ -857,7 +857,7 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 
 		repository
 				.findBy(Example.of(probe, matching().withIgnorePaths("id")),
-						q -> q.sortBy(Sort.by("name")).limit(2).scroll(ScrollPosition.offset(2))) //
+						q -> q.sortBy(Sort.by("name")).limit(2).scroll(ScrollPosition.offset(1))) //
 				.as(StepVerifier::create) //
 				.consumeNextWith(window -> {
 

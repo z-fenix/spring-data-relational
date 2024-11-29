@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.query.QueryLookupStrategy;
 import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.RepositoryQuery;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
@@ -137,7 +138,7 @@ class JdbcQueryLookupStrategyUnitTests {
 				.registerRowMapper(NumberFormat.class, numberFormatMapper);
 
 		QueryLookupStrategy queryLookupStrategy = JdbcQueryLookupStrategy.create(key, publisher, callbacks, mappingContext,
-				converter, H2Dialect.INSTANCE, mappingConfiguration, operations, null, evaluationContextProvider);
+				converter, H2Dialect.INSTANCE, mappingConfiguration, operations, null, ValueExpressionDelegate.create());
 
 		assertThat(queryLookupStrategy).isInstanceOf(expectedClass);
 	}
@@ -157,7 +158,7 @@ class JdbcQueryLookupStrategyUnitTests {
 			QueryMappingConfiguration mappingConfiguration) {
 
 		QueryLookupStrategy queryLookupStrategy = JdbcQueryLookupStrategy.create(key, publisher, callbacks, mappingContext,
-				converter, H2Dialect.INSTANCE, mappingConfiguration, operations, null, evaluationContextProvider);
+				converter, H2Dialect.INSTANCE, mappingConfiguration, operations, null, ValueExpressionDelegate.create());
 
 		Method method = ReflectionUtils.findMethod(MyRepository.class, name);
 		return queryLookupStrategy.resolveQuery(method, metadata, projectionFactory, namedQueries);

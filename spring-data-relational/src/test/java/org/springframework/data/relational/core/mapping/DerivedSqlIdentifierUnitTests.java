@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,6 @@ public class DerivedSqlIdentifierUnitTests {
 		SqlIdentifier identifier = new DerivedSqlIdentifier("someName", true);
 
 		assertThat(identifier.toSql(BRACKETS_LOWER_CASE)).isEqualTo("[somename]");
-		assertThat(identifier.getReference(BRACKETS_LOWER_CASE)).isEqualTo("someName");
 		assertThat(identifier.getReference()).isEqualTo("someName");
 	}
 
@@ -52,7 +51,6 @@ public class DerivedSqlIdentifierUnitTests {
 		String sql = identifier.toSql(BRACKETS_LOWER_CASE);
 
 		assertThat(sql).isEqualTo("somename");
-		assertThat(identifier.getReference(BRACKETS_LOWER_CASE)).isEqualTo("someName");
 		assertThat(identifier.getReference()).isEqualTo("someName");
 	}
 

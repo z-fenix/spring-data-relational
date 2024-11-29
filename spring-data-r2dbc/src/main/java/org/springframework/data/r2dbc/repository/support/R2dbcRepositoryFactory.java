@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,17 +32,17 @@ import org.springframework.data.relational.core.mapping.RelationalPersistentEnti
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.repository.query.RelationalEntityInformation;
 import org.springframework.data.relational.repository.support.MappingRelationalEntityInformation;
+import org.springframework.data.relational.repository.support.RelationalQueryLookupStrategy;
 import org.springframework.data.repository.core.NamedQueries;
 import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.ReactiveRepositoryFactorySupport;
+import org.springframework.data.repository.query.CachingValueExpressionDelegate;
 import org.springframework.data.repository.query.QueryLookupStrategy;
 import org.springframework.data.repository.query.QueryLookupStrategy.Key;
-import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.ReactiveQueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.RepositoryQuery;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.lang.Nullable;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.util.Assert;
@@ -51,10 +51,10 @@ import org.springframework.util.Assert;
  * Factory to create {@link R2dbcRepository} instances.
  *
  * @author Mark Paluch
+ * @author Jens Schauder
+ * @author Marcin Grzejszczak
  */
 public class R2dbcRepositoryFactory extends ReactiveRepositoryFactorySupport {
-
-	private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	private final DatabaseClient databaseClient;
 	private final ReactiveDataAccessStrategy dataAccessStrategy;
@@ -110,16 +110,13 @@ public class R2dbcRepositoryFactory extends ReactiveRepositoryFactorySupport {
 		RelationalEntityInformation<?, ?> entityInformation = getEntityInformation(information.getDomainType(),
 				information);
 
-		return getTargetRepositoryViaReflection(information, entityInformation,
-				operations, this.converter);
+		return getTargetRepositoryViaReflection(information, entityInformation, operations, this.converter);
 	}
 
 	@Override
 	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(@Nullable Key key,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
-		return Optional.of(new R2dbcQueryLookupStrategy(this.operations,
-				(ReactiveQueryMethodEvaluationContextProvider) evaluationContextProvider, this.converter,
-				this.dataAccessStrategy));
+			ValueExpressionDelegate valueExpressionDelegate) {
+		return Optional.of(new R2dbcQueryLookupStrategy(operations, new CachingValueExpressionDelegate(valueExpressionDelegate), converter, dataAccessStrategy));
 	}
 
 	public <T, ID> RelationalEntityInformation<T, ID> getEntityInformation(Class<T> domainClass) {
@@ -136,45 +133,44 @@ public class R2dbcRepositoryFactory extends ReactiveRepositoryFactorySupport {
 	}
 
 	/**
-	 * {@link QueryLookupStrategy} to create R2DBC queries..
+	 * {@link QueryLookupStrategy} to create R2DBC queries.
 	 *
 	 * @author Mark Paluch
+	 * @author Jens Schauder
 	 */
-	private static class R2dbcQueryLookupStrategy implements QueryLookupStrategy {
+	private static class R2dbcQueryLookupStrategy extends RelationalQueryLookupStrategy {
 
 		private final R2dbcEntityOperations entityOperations;
-		private final ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider;
 		private final R2dbcConverter converter;
+		private final ValueExpressionDelegate delegate;
 		private final ReactiveDataAccessStrategy dataAccessStrategy;
-		private final ExpressionParser parser = new CachingExpressionParser(EXPRESSION_PARSER);
 
 		R2dbcQueryLookupStrategy(R2dbcEntityOperations entityOperations,
-				ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider, R2dbcConverter converter,
+				ValueExpressionDelegate delegate, R2dbcConverter converter,
 				ReactiveDataAccessStrategy dataAccessStrategy) {
+
+			super(converter.getMappingContext(), dataAccessStrategy.getDialect());
+			this.delegate = delegate;
 			this.entityOperations = entityOperations;
-			this.evaluationContextProvider = evaluationContextProvider;
 			this.converter = converter;
 			this.dataAccessStrategy = dataAccessStrategy;
-
 		}
 
 		@Override
 		public RepositoryQuery resolveQuery(Method method, RepositoryMetadata metadata, ProjectionFactory factory,
 				NamedQueries namedQueries) {
 
-			R2dbcQueryMethod queryMethod = new R2dbcQueryMethod(method, metadata, factory,
-					this.converter.getMappingContext());
+			R2dbcQueryMethod queryMethod = new R2dbcQueryMethod(method, metadata, factory, getMappingContext());
 			String namedQueryName = queryMethod.getNamedQueryName();
 
-			if (namedQueries.hasQuery(namedQueryName)) {
-				String namedQuery = namedQueries.getQuery(namedQueryName);
-				return new StringBasedR2dbcQuery(namedQuery, queryMethod, this.entityOperations, this.converter,
-						this.dataAccessStrategy,
-						parser, this.evaluationContextProvider);
-			} else if (queryMethod.hasAnnotatedQuery()) {
-				return new StringBasedR2dbcQuery(queryMethod, this.entityOperations, this.converter, this.dataAccessStrategy,
-						this.parser,
-						this.evaluationContextProvider);
+			if (namedQueries.hasQuery(namedQueryName) || queryMethod.hasAnnotatedQuery()) {
+
+				String query = namedQueries.hasQuery(namedQueryName) ? namedQueries.getQuery(namedQueryName)
+						: queryMethod.getRequiredAnnotatedQuery();
+				query = evaluateTableExpressions(metadata, query);
+
+				return new StringBasedR2dbcQuery(query, queryMethod, this.entityOperations, this.converter, this.dataAccessStrategy, this.delegate);
+
 			} else {
 				return new PartTreeR2dbcQuery(queryMethod, this.entityOperations, this.converter, this.dataAccessStrategy);
 			}

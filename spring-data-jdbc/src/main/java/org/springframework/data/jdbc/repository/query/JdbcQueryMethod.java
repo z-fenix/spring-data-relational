@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,16 +28,18 @@ import org.springframework.data.relational.core.mapping.RelationalPersistentEnti
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.repository.Lock;
 import org.springframework.data.relational.repository.query.RelationalEntityMetadata;
-import org.springframework.data.relational.repository.query.RelationalParameters;
 import org.springframework.data.relational.repository.query.SimpleRelationalEntityMetadata;
 import org.springframework.data.repository.core.NamedQueries;
 import org.springframework.data.repository.core.RepositoryMetadata;
+import org.springframework.data.repository.query.Parameters;
+import org.springframework.data.repository.query.ParametersSource;
 import org.springframework.data.repository.query.QueryMethod;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ConcurrentReferenceHashMap;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 /**
@@ -49,6 +51,7 @@ import org.springframework.util.StringUtils;
  * @author Moises Cisneros
  * @author Hebert Coelho
  * @author Diego Krupitza
+ * @author Mark Paluch
  */
 public class JdbcQueryMethod extends QueryMethod {
 
@@ -57,6 +60,7 @@ public class JdbcQueryMethod extends QueryMethod {
 	private final Map<Class<? extends Annotation>, Optional<Annotation>> annotationCache;
 	private final NamedQueries namedQueries;
 	private @Nullable RelationalEntityMetadata<?> metadata;
+	private final boolean modifyingQuery;
 
 	// TODO: Remove NamedQueries and put it into JdbcQueryLookupStrategy
 	public JdbcQueryMethod(Method method, RepositoryMetadata metadata, ProjectionFactory factory,
@@ -68,11 +72,12 @@ public class JdbcQueryMethod extends QueryMethod {
 		this.method = method;
 		this.mappingContext = mappingContext;
 		this.annotationCache = new ConcurrentReferenceHashMap<>();
+		this.modifyingQuery = AnnotationUtils.findAnnotation(method, Modifying.class) != null;
 	}
 
 	@Override
-	protected RelationalParameters createParameters(Method method) {
-		return new RelationalParameters(method);
+	protected Parameters<?, ?> createParameters(ParametersSource parametersSource) {
+		return new JdbcParameters(parametersSource);
 	}
 
 	@Override
@@ -106,8 +111,8 @@ public class JdbcQueryMethod extends QueryMethod {
 	}
 
 	@Override
-	public RelationalParameters getParameters() {
-		return (RelationalParameters) super.getParameters();
+	public JdbcParameters getParameters() {
+		return (JdbcParameters) super.getParameters();
 	}
 
 	/**
@@ -120,6 +125,17 @@ public class JdbcQueryMethod extends QueryMethod {
 
 		String annotatedValue = getQueryValue();
 		return StringUtils.hasText(annotatedValue) ? annotatedValue : getNamedQuery();
+	}
+
+	public String getRequiredQuery() {
+
+		String query = getDeclaredQuery();
+
+		if (ObjectUtils.isEmpty(query)) {
+			throw new IllegalStateException(String.format("No query specified on %s", getName()));
+		}
+
+		return query;
 	}
 
 	/**
@@ -208,7 +224,7 @@ public class JdbcQueryMethod extends QueryMethod {
 	 */
 	@Override
 	public boolean isModifyingQuery() {
-		return AnnotationUtils.findAnnotation(method, Modifying.class) != null;
+		return modifyingQuery;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -246,7 +262,7 @@ public class JdbcQueryMethod extends QueryMethod {
 
 	/**
 	 * Looks up the {@link Lock} annotation from the query method.
-	 * 
+	 *
 	 * @return the {@link Optional} wrapped {@link Lock} annotation.
 	 */
 	Optional<Lock> lookupLockAnnotation() {

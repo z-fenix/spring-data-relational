@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2023 the original author or authors.
+ * Copyright 2021-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.springframework.data.jdbc.core.dialect;
 
 import microsoft.sql.DateTimeOffset;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -31,6 +32,7 @@ import org.springframework.data.relational.core.dialect.SqlServerDialect;
  *
  * @author Jens Schauder
  * @author Christoph Strobl
+ * @author Mikhail Polivakha
  * @since 2.3
  */
 public class JdbcSqlServerDialect extends SqlServerDialect {
@@ -42,6 +44,7 @@ public class JdbcSqlServerDialect extends SqlServerDialect {
 
 		List<Object> converters = new ArrayList<>(super.getConverters());
 		converters.add(DateTimeOffsetToOffsetDateTimeConverter.INSTANCE);
+		converters.add(DateTimeOffsetToInstantConverter.INSTANCE);
 		return converters;
 	}
 
@@ -53,6 +56,17 @@ public class JdbcSqlServerDialect extends SqlServerDialect {
 		@Override
 		public OffsetDateTime convert(DateTimeOffset source) {
 			return source.getOffsetDateTime();
+		}
+	}
+
+	@ReadingConverter
+	enum DateTimeOffsetToInstantConverter implements Converter<DateTimeOffset, Instant> {
+
+		INSTANCE;
+
+		@Override
+		public Instant convert(DateTimeOffset source) {
+			return source.getOffsetDateTime().toInstant();
 		}
 	}
 }

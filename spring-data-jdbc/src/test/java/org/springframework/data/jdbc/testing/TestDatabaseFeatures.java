@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public class TestDatabaseFeatures {
 		String productName = jdbcTemplate.execute(
 				(ConnectionCallback<String>) c -> c.getMetaData().getDatabaseProductName().toLowerCase(Locale.ENGLISH));
 
-		database = Arrays.stream(Database.values()).filter(db -> db.matches(productName)).findFirst().get();
+		database = Arrays.stream(Database.values()).filter(db -> db.matches(productName)).findFirst().orElseThrow();
 	}
 
 	/**
@@ -48,15 +48,6 @@ public class TestDatabaseFeatures {
 	 */
 	private void supportsHugeNumbers() {
 		assumeThat(database).isNotIn(Database.Oracle, Database.SqlServer);
-	}
-
-	/**
-	 * Oracles JDBC driver seems to have a bug that makes it impossible to acquire generated keys when the column is
-	 * quoted. See
-	 * https://stackoverflow.com/questions/62263576/how-to-get-the-generated-key-for-a-column-with-lowercase-characters-from-oracle
-	 */
-	private void supportsQuotedIds() {
-		assumeThat(database).isNotEqualTo(Database.Oracle);
 	}
 
 	/**
@@ -88,6 +79,10 @@ public class TestDatabaseFeatures {
 		assumeThat(database).isNotIn(Database.MySql, Database.MariaDb, Database.SqlServer);
 	}
 
+	private void supportsWhereInTuples() {
+		assumeThat(database).isIn(Database.MySql, Database.PostgreSql);
+	}
+
 	public void databaseIs(Database database) {
 		assumeThat(this.database).isEqualTo(database);
 	}
@@ -115,13 +110,13 @@ public class TestDatabaseFeatures {
 	public enum Feature {
 
 		SUPPORTS_MULTIDIMENSIONAL_ARRAYS(TestDatabaseFeatures::supportsMultiDimensionalArrays), //
-		SUPPORTS_QUOTED_IDS(TestDatabaseFeatures::supportsQuotedIds), //
 		SUPPORTS_HUGE_NUMBERS(TestDatabaseFeatures::supportsHugeNumbers), //
 		SUPPORTS_ARRAYS(TestDatabaseFeatures::supportsArrays), //
 		SUPPORTS_GENERATED_IDS_IN_REFERENCED_ENTITIES(TestDatabaseFeatures::supportsGeneratedIdsInReferencedEntities), //
 		SUPPORTS_NANOSECOND_PRECISION(TestDatabaseFeatures::supportsNanosecondPrecision), //
 		SUPPORTS_NULL_PRECEDENCE(TestDatabaseFeatures::supportsNullPrecedence),
 		IS_POSTGRES(f -> f.databaseIs(Database.PostgreSql)), //
+		WHERE_IN_TUPLE(TestDatabaseFeatures::supportsWhereInTuples), //
 		IS_HSQL(f -> f.databaseIs(Database.Hsql));
 
 		private final Consumer<TestDatabaseFeatures> featureMethod;

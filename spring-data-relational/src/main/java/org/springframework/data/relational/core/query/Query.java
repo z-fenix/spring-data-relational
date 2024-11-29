@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,11 +171,11 @@ public class Query {
 	 */
 	public Query with(Pageable pageable) {
 
-		if (pageable.isUnpaged()) {
-			return this;
-		}
-
 		assertNoCaseSort(pageable.getSort());
+
+		if (pageable.isUnpaged()) {
+			return new Query(this.criteria, this.columns, this.sort.and(pageable.getSort()), this.limit, this.offset);
+		}
 
 		return new Query(this.criteria, this.columns, this.sort.and(pageable.getSort()), pageable.getPageSize(),
 				pageable.getOffset());

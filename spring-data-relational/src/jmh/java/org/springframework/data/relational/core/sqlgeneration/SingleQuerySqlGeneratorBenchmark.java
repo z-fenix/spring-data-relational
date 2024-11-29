@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,16 @@
  */
 package org.springframework.data.relational.core.sqlgeneration;
 
-import jmh.mbr.junit5.Microbenchmark;
 
 import java.util.List;
 
+import org.junit.platform.commons.annotation.Testable;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.BenchmarkSettings;
 import org.springframework.data.relational.core.dialect.PostgresDialect;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
@@ -33,7 +34,7 @@ import org.springframework.data.relational.core.mapping.RelationalPersistentEnti
  *
  * @author Mark Paluch
  */
-@Microbenchmark
+@Testable
 public class SingleQuerySqlGeneratorBenchmark extends BenchmarkSettings {
 
 	@Benchmark

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ class ResultSetAccessorPropertyAccessor implements PropertyAccessor {
 
 	@Override
 	public boolean canRead(EvaluationContext context, @Nullable Object target, String name) {
-		return target instanceof ResultSetAccessor && ((ResultSetAccessor) target).hasValue(name);
+		return target instanceof ResultSetAccessor resultSetAccessor && resultSetAccessor.hasValue(name);
 	}
 
 	@Override

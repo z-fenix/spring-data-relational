@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,23 +18,17 @@ package org.springframework.data.jdbc.core;
 import static java.util.Arrays.*;
 import static java.util.Collections.*;
 import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.SoftAssertions.*;
 import static org.springframework.data.jdbc.testing.TestConfiguration.*;
 import static org.springframework.data.jdbc.testing.TestDatabaseFeatures.Feature.*;
 
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -61,6 +55,7 @@ import org.springframework.data.jdbc.testing.TestDatabaseFeatures;
 import org.springframework.data.mapping.context.InvalidPersistentPropertyPath;
 import org.springframework.data.relational.core.conversion.DbActionExecutionException;
 import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
 import org.springframework.data.relational.core.mapping.MappedCollection;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
@@ -286,7 +281,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithReferencedEntityById() {
 
 		template.save(legoSet);
@@ -304,7 +298,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadManyEntitiesWithReferencedEntity() {
 
 		template.save(legoSet);
@@ -317,7 +310,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-101
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadManyEntitiesWithReferencedEntitySorted() {
 
 		template.save(createLegoSet("Lava"));
@@ -332,7 +324,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-101
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadManyEntitiesWithReferencedEntitySortedAndPaged() {
 
 		template.save(createLegoSet("Lava"));
@@ -347,7 +338,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // GH-821
-	@EnabledOnFeature({ SUPPORTS_QUOTED_IDS, SUPPORTS_NULL_PRECEDENCE })
+	@EnabledOnFeature(SUPPORTS_NULL_PRECEDENCE)
 	void saveAndLoadManyEntitiesWithReferencedEntitySortedWithNullPrecedence() {
 
 		template.save(createLegoSet(null));
@@ -363,7 +354,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test //
-	@EnabledOnFeature({ SUPPORTS_QUOTED_IDS })
 	void findByNonPropertySortFails() {
 
 		assertThatThrownBy(() -> template.findAll(LegoSet.class, Sort.by("somethingNotExistant")))
@@ -371,7 +361,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadManyEntitiesByIdWithReferencedEntity() {
 
 		template.save(legoSet);
@@ -383,7 +372,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithReferencedNullEntity() {
 
 		legoSet.manual = null;
@@ -396,7 +384,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndDeleteAnEntityWithReferencedEntity() {
 
 		template.save(legoSet);
@@ -408,7 +395,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndDeleteAllWithReferencedEntity() {
 
 		template.save(legoSet);
@@ -420,7 +406,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // GH-537
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndDeleteAllByAggregateRootsWithReferencedEntity() {
 
 		LegoSet legoSet1 = template.save(legoSet);
@@ -434,7 +419,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // GH-537
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndDeleteAllByIdsWithReferencedEntity() {
 
 		LegoSet legoSet1 = template.save(legoSet);
@@ -494,7 +478,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature({ SUPPORTS_QUOTED_IDS, SUPPORTS_GENERATED_IDS_IN_REFERENCED_ENTITIES })
+	@EnabledOnFeature(SUPPORTS_GENERATED_IDS_IN_REFERENCED_ENTITIES)
 	void updateReferencedEntityFromNull() {
 
 		legoSet.manual = (null);
@@ -513,7 +497,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void updateReferencedEntityToNull() {
 
 		template.save(legoSet);
@@ -541,7 +524,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void replaceReferencedEntity() {
 
 		template.save(legoSet);
@@ -559,7 +541,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-112
-	@EnabledOnFeature({ SUPPORTS_QUOTED_IDS, TestDatabaseFeatures.Feature.SUPPORTS_GENERATED_IDS_IN_REFERENCED_ENTITIES })
+	@EnabledOnFeature(TestDatabaseFeatures.Feature.SUPPORTS_GENERATED_IDS_IN_REFERENCED_ENTITIES)
 	void changeReferencedEntity() {
 
 		template.save(legoSet);
@@ -574,7 +556,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-266
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void oneToOneChildWithoutId() {
 
 		OneToOneParent parent = new OneToOneParent();
@@ -591,7 +572,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-266
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void oneToOneNullChildWithoutId() {
 
 		OneToOneParent parent = new OneToOneParent();
@@ -607,7 +587,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-266
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void oneToOneNullAttributes() {
 
 		OneToOneParent parent = new OneToOneParent();
@@ -623,7 +602,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-125
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithSecondaryReferenceNull() {
 
 		template.save(legoSet);
@@ -636,7 +614,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-125
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithSecondaryReferenceNotNull() {
 
 		legoSet.alternativeInstructions = new Manual();
@@ -655,7 +632,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-276
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithListOfElementsWithoutId() {
 
 		ListParent entity = new ListParent();
@@ -674,7 +650,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // GH-498 DATAJDBC-273
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadAnEntityWithListOfElementsInConstructor() {
 
 		ElementNoId element = new ElementNoId();
@@ -704,6 +679,26 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(reloaded).isNotNull();
 		assertThat(reloaded.id).isEqualTo(saved.id);
 		assertThat(reloaded.digits).isEqualTo(new String[] { "one", "two", "three" });
+	}
+
+	@Test // GH-1826
+	@EnabledOnFeature(SUPPORTS_ARRAYS)
+	void saveAndLoadAnEntityWithEmptyArray() {
+
+		ArrayOwner arrayOwner = new ArrayOwner();
+		arrayOwner.digits = new String[] { };
+
+		ArrayOwner saved = template.save(arrayOwner);
+
+		assertThat(saved.id).isNotNull();
+
+		ArrayOwner reloaded = template.findById(saved.id, ArrayOwner.class);
+
+		assertThat(reloaded).isNotNull();
+		assertThat(reloaded.id).isEqualTo(saved.id);
+		assertThat(reloaded.digits) //
+				.isNotNull() //
+				.isEmpty();
 	}
 
 	@Test // DATAJDBC-259, DATAJDBC-512
@@ -741,6 +736,23 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(reloaded).isNotNull();
 		assertThat(reloaded.id).isEqualTo(saved.id);
 		assertThat(reloaded.digits).isEqualTo(asList("one", "two", "three"));
+	}
+
+	@Test // DATAJDBC-1826
+	@EnabledOnFeature(SUPPORTS_ARRAYS)
+	void saveAndLoadAnEntityWithEmptyList() {
+
+		ListOwner arrayOwner = new ListOwner();
+
+		ListOwner saved = template.save(arrayOwner);
+
+		assertThat(saved.id).isNotNull();
+
+		ListOwner reloaded = template.findById(saved.id, ListOwner.class);
+
+		assertThat(reloaded).isNotNull();
+		assertThat(reloaded.id).isEqualTo(saved.id);
+		assertThat(reloaded.digits).isNotNull().isEmpty();
 	}
 
 	@Test // GH-1033
@@ -798,6 +810,36 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(reloaded.digits).isEqualTo(new HashSet<>(asList("one", "two", "three")));
 	}
 
+	@Test //GH-1737
+	@EnabledOnFeature(SUPPORTS_ARRAYS)
+	void saveAndLoadEmbeddedArray() {
+
+		EmbeddedStringListOwner embeddedStringListOwner = new EmbeddedStringListOwner();
+		embeddedStringListOwner.embeddedStringList = new EmbeddedStringList();
+		embeddedStringListOwner.embeddedStringList.digits = List.of("one", "two", "three");
+
+		EmbeddedStringListOwner saved = template.save(embeddedStringListOwner);
+
+		EmbeddedStringListOwner reloaded = template.findById(saved.id, EmbeddedStringListOwner.class);
+
+		assertThat(reloaded.embeddedStringList.digits).containsExactly("one", "two", "three");
+	}
+
+	@Test //GH-1737
+	@EnabledOnFeature(SUPPORTS_ARRAYS)
+	void saveAndLoadEmptyEmbeddedArray() {
+
+		EmbeddedStringListOwner embeddedStringListOwner = new EmbeddedStringListOwner();
+		embeddedStringListOwner.embeddedStringList = new EmbeddedStringList();
+		embeddedStringListOwner.embeddedStringList.digits = emptyList();
+
+		EmbeddedStringListOwner saved = template.save(embeddedStringListOwner);
+
+		EmbeddedStringListOwner reloaded = template.findById(saved.id, EmbeddedStringListOwner.class);
+
+		assertThat(reloaded.embeddedStringList).isNull();
+	}
+
 	@Test
 	// DATAJDBC-327
 	void saveAndLoadAnEntityWithByteArray() {
@@ -815,7 +857,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-340
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadLongChain() {
 
 		Chain4 chain4 = new Chain4();
@@ -844,7 +885,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-359
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void saveAndLoadLongChainWithoutIds() {
 
 		NoIdChain4 chain4 = new NoIdChain4();
@@ -941,7 +981,7 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 
 		assertThat(
 				jdbcTemplate.queryForObject("SELECT read_only FROM with_read_only", Collections.emptyMap(), String.class))
-						.isEqualTo("from-db");
+				.isEqualTo("from-db");
 	}
 
 	@Test
@@ -1084,7 +1124,6 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	@Test // DATAJDBC-462
-	@EnabledOnFeature(SUPPORTS_QUOTED_IDS)
 	void resavingAnUnversionedEntity() {
 
 		LegoSet legoSet = new LegoSet();
@@ -1268,6 +1307,68 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		assertThat(reloaded.mapElements.get("delta")).isEqualTo(new MapElement("four"));
 	}
 
+	@Test // GH-1646
+	void recordOfSet() {
+
+		Author tolkien = template.save(new Author(null, Set.of(new Book("Lord of the Rings"))));
+
+		Iterable<Author> authors = template.findAll(Author.class);
+
+		assertThat(authors).containsExactly(tolkien);
+	}
+
+	@Test // GH-1656
+	void mapWithEnumKey() {
+
+		EnumMapOwner enumMapOwner = template
+				.save(new EnumMapOwner(null, "OwnerName", Map.of(Color.BLUE, new MapElement("Element"))));
+
+		Iterable<EnumMapOwner> enumMapOwners = template.findAll(EnumMapOwner.class);
+
+		assertThat(enumMapOwners).containsExactly(enumMapOwner);
+	}
+
+	@Test // GH-1684
+	void oneToOneWithIdenticalIdColumnName() {
+
+		WithOneToOne saved = template.insert(new WithOneToOne("one", new Referenced(23L)));
+
+		WithOneToOne reloaded = template.findById(saved.id, WithOneToOne.class);
+
+		assertThat(reloaded).isEqualTo(saved);
+	}
+
+	@Test // GH-1802
+	void singleEntitySetChain() {
+
+		First first1 = template.insert( //
+				new First(1L, "first-1", //
+						new Sec(2L, "second-1-2", Set.of( //
+								new Third("third-1-2-0"), //
+								new Third("third-1-2-1"), //
+								new Third("third-1-2-3")) //
+						) //
+				) //
+		);
+		First first2 = template.insert( //
+				new First(2L, "first-2", //
+						new Sec(3L, "second-2-3", Set.of( //
+								new Third("third-2-3-0"), //
+								new Third("third-2-3-1"), //
+								new Third("third-2-3-3")) //
+						) //
+				) //
+		);
+
+		First first1Reloaded = template.findById(first1.id, First.class);
+		First first2Reloaded = template.findById(first2.id, First.class);
+
+		assertSoftly(softly -> {
+			softly.assertThat(first1Reloaded).isEqualTo(first1);
+			softly.assertThat(first2Reloaded).isEqualTo(first2);
+		});
+	}
+
 	private <T extends Number> void saveAndUpdateAggregateWithVersion(VersionedAggregate aggregate,
 			Function<Number, T> toConcreteNumber) {
 		saveAndUpdateAggregateWithVersion(aggregate, toConcreteNumber, 0);
@@ -1360,6 +1461,17 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 		@Id Long id;
 
 		List<Float> digits = new ArrayList<>();
+	}
+
+	@Table("ARRAY_OWNER")
+	private static class EmbeddedStringListOwner {
+		@Id Long id;
+
+		@Embedded(onEmpty = Embedded.OnEmpty.USE_NULL, prefix = "") EmbeddedStringList embeddedStringList;
+	}
+
+	private static class EmbeddedStringList {
+		List<String> digits = new ArrayList<>();
 	}
 
 	static class LegoSet {
@@ -2077,6 +2189,31 @@ abstract class AbstractJdbcAggregateTemplateIntegrationTests {
 	}
 
 	record MapElement(String name) {
+	}
+
+	record Author(@Id Long id, Set<Book> books) {
+	}
+
+	record Book(String name) {
+
+	}
+
+	record EnumMapOwner(@Id Long id, String name, Map<Color, MapElement> map) {
+	}
+
+	record WithOneToOne(@Id String id, @MappedCollection(idColumn = "renamed") Referenced referenced) {
+	}
+
+	record Referenced(@Id Long id) {
+	}
+
+	record First(@Id Long id, String name, Sec sec) {
+	}
+
+	record Sec(@Id Long id, String name, Set<Third> thirds) {
+	}
+
+	record Third(String name) {
 	}
 
 	@Configuration

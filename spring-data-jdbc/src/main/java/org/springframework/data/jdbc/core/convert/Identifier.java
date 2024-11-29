@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2023 the original author or authors.
+ * Copyright 2021-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,18 +59,17 @@ public final class Identifier {
 	/**
 	 * Creates an {@link Identifier} from {@code name}, {@code value}, and a {@link Class target type}.
 	 *
-	 * @param name must not be {@literal null} or empty.
-	 * @param value
+	 * @param name must not be {@literal null}.
+	 * @param value must not be {@literal null}.
 	 * @param targetType must not be {@literal null}.
 	 * @return the {@link Identifier} for {@code name}, {@code value}, and a {@link Class target type}.
 	 */
 	public static Identifier of(SqlIdentifier name, Object value, Class<?> targetType) {
 
-		Assert.notNull(name, "Name must not be empty");
+		Assert.notNull(name, "Name must not be null");
+		Assert.notNull(value, "Value must not be null");
 		Assert.notNull(targetType, "Target type must not be null");
 
-		// TODO: Is value allowed to be null? SingleIdentifierValue says so, but this type doesn't allows it and
-		// SqlParametersFactory.lambda$forQueryByIdentifier$1 fails with a NPE.
 		return new Identifier(Collections.singletonList(new SingleIdentifierValue(name, value, targetType)));
 	}
 
@@ -92,7 +91,9 @@ public final class Identifier {
 
 		map.forEach((k, v) -> {
 
-			values.add(new SingleIdentifierValue(k, v, v != null ? ClassUtils.getUserClass(v) : Object.class));
+			Assert.notNull(v, "The source map for identifier must not contain null values");
+
+			values.add(new SingleIdentifierValue(k, v, ClassUtils.getUserClass(v)));
 		});
 
 		return new Identifier(Collections.unmodifiableList(values));
@@ -199,9 +200,10 @@ public final class Identifier {
 		private final Object value;
 		private final Class<?> targetType;
 
-		private SingleIdentifierValue(SqlIdentifier name, @Nullable Object value, Class<?> targetType) {
+		private SingleIdentifierValue(SqlIdentifier name, Object value, Class<?> targetType) {
 
 			Assert.notNull(name, "Name must not be null");
+			Assert.notNull(value, "Name must not be null");
 			Assert.notNull(targetType, "TargetType must not be null");
 
 			this.name = name;

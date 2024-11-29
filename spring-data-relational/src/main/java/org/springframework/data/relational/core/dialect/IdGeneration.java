@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package org.springframework.data.relational.core.dialect;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+
+import org.springframework.data.relational.core.sql.SqlIdentifier;
 
 /**
  * Describes how obtaining generated ids after an insert works for a given JDBC driver.
@@ -43,6 +45,18 @@ public interface IdGeneration {
 	 */
 	default boolean driverRequiresKeyColumnNames() {
 		return false;
+	}
+
+	/**
+	 * Provides for a given id {@link SqlIdentifier} the String that is to be used for registering interest in the
+	 * generated value of that column.
+	 * 
+	 * @param id {@link SqlIdentifier} representing a column for which a generated value is to be obtained.
+	 * @return a String representing that column in the way expected by the JDBC driver.
+	 * @since 3.3
+	 */
+	default String getKeyColumnName(SqlIdentifier id) {
+		return id.getReference();
 	}
 
 	/**

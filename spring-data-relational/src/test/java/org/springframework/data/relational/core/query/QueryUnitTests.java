@@ -1,5 +1,5 @@
 /*
-* Copyright 2020-2023 the original author or authors.
+* Copyright 2020-2024 the original author or authors.
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -19,17 +19,19 @@ import static org.assertj.core.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
 /**
  * Tests the {@link Query} class.
  *
  * @author Jens Schauder
+ * @author Mark Paluch
  */
-public class QueryUnitTests {
+class QueryUnitTests {
 
-	@Test // DATAJDBC614
-	public void withCombinesSortAndPaging() {
+	@Test // DATAJDBC-614
+	void withCombinesSortAndPaging() {
 
 		Query query = Query.empty() //
 				.sort(Sort.by("alpha")) //
@@ -40,8 +42,8 @@ public class QueryUnitTests {
 				.containsExactly("alpha", "beta");
 	}
 
-	@Test // DATAJDBC614
-	public void withCombinesEmptySortAndPaging() {
+	@Test // DATAJDBC-614
+	void withCombinesEmptySortAndPaging() {
 
 		Query query = Query.empty() //
 				.with(PageRequest.of(2, 20, Sort.by("beta")));
@@ -51,8 +53,8 @@ public class QueryUnitTests {
 				.containsExactly("beta");
 	}
 
-	@Test // DATAJDBC614
-	public void withCombinesSortAndUnsortedPaging() {
+	@Test // DATAJDBC-614
+	void withCombinesSortAndUnsortedPaging() {
 
 		Query query = Query.empty() //
 				.sort(Sort.by("alpha")) //
@@ -61,5 +63,18 @@ public class QueryUnitTests {
 		assertThat(query.getSort().get()) //
 				.extracting(Sort.Order::getProperty) //
 				.containsExactly("alpha");
+	}
+
+	@Test // GH-1939
+	void withCombinesUnpagedWithSort() {
+
+		Query query = Query.empty() //
+				.with(Pageable.unpaged(Sort.by("beta")));
+
+		assertThat(query.getSort().get()) //
+				.extracting(Sort.Order::getProperty) //
+				.containsExactly("beta");
+		assertThat(query.getLimit()).isEqualTo(-1);
+		assertThat(query.getOffset()).isEqualTo(-1);
 	}
 }

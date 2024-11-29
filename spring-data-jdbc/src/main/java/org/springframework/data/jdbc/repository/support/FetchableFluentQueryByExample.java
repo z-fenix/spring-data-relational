@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 the original author or authors.
+ * Copyright 2022-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -102,7 +102,11 @@ class FetchableFluentQueryByExample<S, R> extends FluentQuerySupport<S, R> {
 
 		if (scrollPosition instanceof OffsetScrollPosition osp) {
 
-			Query query = createQuery().sort(getSort()).offset(osp.getOffset());
+			Query query = createQuery().sort(getSort());
+
+			if (!osp.isInitial()) {
+				query = query.offset(osp.getOffset() + 1);
+			}
 
 			if (getLimit() > 0) {
 				query = query.limit(getLimit());

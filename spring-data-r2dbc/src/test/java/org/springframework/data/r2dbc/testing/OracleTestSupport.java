@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2023 the original author or authors.
+ * Copyright 2021-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,14 @@ import org.springframework.data.r2dbc.testing.ExternalDatabase.ProvidedDatabase;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.util.ClassUtils;
-import org.testcontainers.containers.OracleContainer;
+import org.testcontainers.oracle.OracleContainer;
 
 /**
  * Utility class for testing against Oracle.
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Loïc Lefèvre
  */
 public class OracleTestSupport {
 
@@ -113,10 +114,10 @@ public class OracleTestSupport {
 		return ProvidedDatabase.builder() //
 				.hostname("localhost") //
 				.port(1521) //
-				.database("XEPDB1") //
-				.username("system") //
-				.password("oracle") //
-				.jdbcUrl("jdbc:oracle:thin:system/oracle@localhost:1521:XEPDB1") //
+				.database("freepdb1") //
+				.username("test") //
+				.password("test") //
+				.jdbcUrl("jdbc:oracle:thin:test/test@localhost:1521/freepdb1") //
 				.build();
 	}
 
@@ -128,7 +129,9 @@ public class OracleTestSupport {
 		if (testContainerDatabase == null) {
 
 			try {
-				OracleContainer container = new OracleContainer("gvenzl/oracle-xe:21.3.0-slim").withReuse(true);
+				OracleContainer container = new OracleContainer("gvenzl/oracle-free:23-slim") //
+						.withReuse(true) //
+						.withStartupTimeoutSeconds(200); // the default of 60s isn't sufficient
 				container.start();
 
 				testContainerDatabase = ProvidedDatabase.builder(container) //
@@ -165,7 +168,7 @@ public class OracleTestSupport {
 
 		DriverManagerDataSource dataSource = new DriverManagerDataSource();
 
-		dataSource.setUrl(database.getJdbcUrl().replace(":xe", "/XEPDB1"));
+		dataSource.setUrl(database.getJdbcUrl().replace(":freepdb1", "/freepdb1"));
 		dataSource.setUsername(database.getUsername());
 		dataSource.setPassword(database.getPassword());
 

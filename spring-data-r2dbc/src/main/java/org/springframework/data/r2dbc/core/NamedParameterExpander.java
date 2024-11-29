@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ class NamedParameterExpander {
 	/**
 	 * Cache of original SQL String to ParsedSql representation.
 	 */
-	@SuppressWarnings("serial") private final Map<String, ParsedSql> parsedSqlCache = new LinkedHashMap<String, ParsedSql>(
+	@SuppressWarnings("serial") private final Map<String, ParsedSql> parsedSqlCache = new LinkedHashMap<>(
 			DEFAULT_CACHE_LIMIT, 0.75f, true) {
 		@Override
 		protected boolean removeEldestEntry(Map.Entry<String, ParsedSql> eldest) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 the original author or authors.
+ * Copyright 2022-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@ class IdGeneratingBatchInsertStrategy implements BatchInsertStrategy {
 		IdGeneration idGeneration = dialect.getIdGeneration();
 		if (idGeneration.driverRequiresKeyColumnNames()) {
 
-			String[] keyColumnNames = getKeyColumnNames();
+			String[] keyColumnNames = getKeyColumnNames(idGeneration);
 			if (keyColumnNames.length == 0) {
 				jdbcOperations.batchUpdate(sql, sqlParameterSources, holder);
 			} else {
@@ -94,10 +94,9 @@ class IdGeneratingBatchInsertStrategy implements BatchInsertStrategy {
 		return ids;
 	}
 
-	private String[] getKeyColumnNames() {
+	private String[] getKeyColumnNames(IdGeneration idGeneration) {
 
-		return Optional.ofNullable(idColumn)
-				.map(idColumn -> new String[] { idColumn.getReference() })
+		return Optional.ofNullable(idColumn).map(idColumn -> new String[] { idGeneration.getKeyColumnName(idColumn) })
 				.orElse(new String[0]);
 	}
 }

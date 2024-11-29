@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.springframework.data.relational.core.dialect;
 
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.WritingConverter;
+import org.springframework.data.relational.core.sql.SqlIdentifier;
 
 import java.util.Collection;
 
@@ -39,6 +40,11 @@ public class OracleDialect extends AnsiDialect {
 		@Override
 		public boolean driverRequiresKeyColumnNames() {
 			return true;
+		}
+
+		@Override
+		public String getKeyColumnName(SqlIdentifier id) {
+			return id.toSql(INSTANCE.getIdentifierProcessing());
 		}
 	};
 

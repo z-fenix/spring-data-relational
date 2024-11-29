@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import reactor.test.StepVerifier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.r2dbc.dialect.PostgresDialect;
 import org.springframework.data.r2dbc.testing.StatementRecorder;
@@ -38,6 +39,7 @@ import org.springframework.r2dbc.core.DatabaseClient;
  * Unit test for {@link ReactiveSelectOperation}.
  *
  * @author Mark Paluch
+ * @author Mikhail Polivakha
  */
 public class ReactiveSelectOperationUnitTests {
 
@@ -54,7 +56,7 @@ public class ReactiveSelectOperationUnitTests {
 		entityTemplate = new R2dbcEntityTemplate(client, new DefaultReactiveDataAccessStrategy(PostgresDialect.INSTANCE));
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectAll() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -78,7 +80,7 @@ public class ReactiveSelectOperationUnitTests {
 				.isEqualTo("SELECT person.* FROM person WHERE person.THE_NAME = $1 LIMIT 10 OFFSET 20");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectAs() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -102,7 +104,7 @@ public class ReactiveSelectOperationUnitTests {
 		assertThat(statement.getSql()).isEqualTo("SELECT person.THE_NAME FROM person WHERE person.THE_NAME = $1");
 	}
 
-	@Test // gh-220
+	@Test // GH-220, GH-1690
 	void shouldSelectAsWithColumnName() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -123,10 +125,10 @@ public class ReactiveSelectOperationUnitTests {
 
 		StatementRecorder.RecordedStatement statement = recorder.getCreatedStatement(s -> s.startsWith("SELECT"));
 
-		assertThat(statement.getSql()).isEqualTo("SELECT person.* FROM person WHERE person.THE_NAME = $1");
+		assertThat(statement.getSql()).isEqualTo("SELECT person.id, person.a_different_name FROM person WHERE person.THE_NAME = $1");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectFromTable() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -150,7 +152,7 @@ public class ReactiveSelectOperationUnitTests {
 		assertThat(statement.getSql()).isEqualTo("SELECT the_table.* FROM the_table WHERE the_table.THE_NAME = $1");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectFirst() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -173,7 +175,7 @@ public class ReactiveSelectOperationUnitTests {
 		assertThat(statement.getSql()).isEqualTo("SELECT person.* FROM person WHERE person.THE_NAME = $1 LIMIT 1");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectOne() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -196,7 +198,7 @@ public class ReactiveSelectOperationUnitTests {
 		assertThat(statement.getSql()).isEqualTo("SELECT person.* FROM person WHERE person.THE_NAME = $1 LIMIT 2");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectExists() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -216,10 +218,10 @@ public class ReactiveSelectOperationUnitTests {
 
 		StatementRecorder.RecordedStatement statement = recorder.getCreatedStatement(s -> s.startsWith("SELECT"));
 
-		assertThat(statement.getSql()).isEqualTo("SELECT person.id FROM person WHERE person.THE_NAME = $1 LIMIT 1");
+		assertThat(statement.getSql()).isEqualTo("SELECT 1 FROM person WHERE person.THE_NAME = $1 LIMIT 1");
 	}
 
-	@Test // gh-220
+	@Test // GH-220
 	void shouldSelectCount() {
 
 		MockRowMetadata metadata = MockRowMetadata.builder()
@@ -239,7 +241,31 @@ public class ReactiveSelectOperationUnitTests {
 
 		StatementRecorder.RecordedStatement statement = recorder.getCreatedStatement(s -> s.startsWith("SELECT"));
 
-		assertThat(statement.getSql()).isEqualTo("SELECT COUNT(person.id) FROM person WHERE person.THE_NAME = $1");
+		assertThat(statement.getSql()).isEqualTo("SELECT COUNT(*) FROM person WHERE person.THE_NAME = $1");
+	}
+
+	@Test // GH-1652
+	void shouldConsiderFetchSize() {
+
+		MockRowMetadata metadata = MockRowMetadata.builder()
+				.columnMetadata(MockColumnMetadata.builder().name("id").type(R2dbcType.INTEGER).build())
+				.build();
+		MockResult result = MockResult.builder()
+				.row(MockRow.builder().identified("id", Object.class, "Walter").metadata(metadata).build())
+				.build();
+
+		recorder.addStubbing(s -> s.startsWith("SELECT"), result);
+
+		entityTemplate.select(Person.class) //
+				.withFetchSize(10) //
+				.all() //
+				.as(StepVerifier::create) //
+				.expectNextCount(1) //
+				.verifyComplete();
+
+		StatementRecorder.RecordedStatement statement = recorder.getCreatedStatement(s -> s.startsWith("SELECT"));
+
+		assertThat(statement.getFetchSize()).isEqualTo(10);
 	}
 
 	static class Person {

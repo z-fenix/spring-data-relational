@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.Row;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.Arrays;
@@ -51,11 +52,12 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
  * Integration tests for {@link ConvertedRepository} that uses {@link Converter}s on entity-level.
  *
  * @author Mark Paluch
+ * @author Sebastian Wieland
  */
 @ExtendWith(SpringExtension.class)
 public class ConvertingR2dbcRepositoryIntegrationTests {
 
-	@Autowired private ConvertedRepository repository;
+	private @Autowired ConvertedRepository repository;
 	private JdbcTemplate jdbc;
 
 	@Configuration
@@ -75,7 +77,7 @@ public class ConvertingR2dbcRepositoryIntegrationTests {
 	}
 
 	@BeforeEach
-	public void before() {
+	void before() {
 
 		this.jdbc = new JdbcTemplate(createDataSource());
 
@@ -105,7 +107,7 @@ public class ConvertingR2dbcRepositoryIntegrationTests {
 	}
 
 	@Test
-	public void shouldInsertAndReadItems() {
+	void shouldInsertAndReadItems() {
 
 		ConvertedEntity entity = new ConvertedEntity();
 		entity.name = "name";
@@ -122,8 +124,28 @@ public class ConvertingR2dbcRepositoryIntegrationTests {
 				}).verifyComplete();
 	}
 
+	@Test // GH-1723
+	void shouldNotUseConverterForCountQueries() {
+
+		ConvertedEntity entity = new ConvertedEntity();
+		entity.name = "name";
+
+		repository.save(entity) //
+				.as(StepVerifier::create) //
+				.expectNextCount(1) //
+				.verifyComplete();
+
+		repository.countWithCustomQuery() //
+				.as(StepVerifier::create) //
+				.consumeNextWith(actual -> {
+					assertThat(actual).isEqualTo(1L);
+				}).verifyComplete();
+	}
+
 	interface ConvertedRepository extends ReactiveCrudRepository<ConvertedEntity, Integer> {
 
+		@Query("SELECT COUNT(*) FROM CONVERTED_ENTITY")
+		Mono<Long> countWithCustomQuery();
 	}
 
 	static class ConvertedEntity {

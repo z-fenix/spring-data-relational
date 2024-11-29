@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,33 +17,35 @@ package org.springframework.data.r2dbc.repository.query;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.assertj.core.api.SoftAssertions;
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
+
+import org.springframework.data.expression.ValueExpression;
+import org.springframework.data.expression.ValueExpressionParser;
 
 /**
  * Unit tests for {@link ExpressionQuery}.
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Marcin Grzejszczak
  */
 class ExpressionQueryUnitTests {
 
-	@Test // gh-373
-	void bindsMultipleSpelParametersCorrectly() {
+	@Test // gh-373, gh-1904
+	void bindsMultipleExpressionParametersCorrectly() {
 
 		ExpressionQuery query = ExpressionQuery
-				.create("INSERT IGNORE INTO table (x, y) VALUES (:#{#point.x}, :#{#point.y})");
+				.create(ValueExpressionParser.create(), "INSERT IGNORE INTO table (x, y) VALUES (:#{#point.x}, :${point.y})");
 
 		assertThat(query.getQuery())
 				.isEqualTo("INSERT IGNORE INTO table (x, y) VALUES (:__synthetic_0__, :__synthetic_1__)");
 
-		SoftAssertions.assertSoftly(softly -> {
+		Map<String, ValueExpression> bindings = query.getBindings();
+		assertThat(bindings).hasSize(2);
 
-			softly.assertThat(query.getBindings()).hasSize(2);
-			softly.assertThat(query.getBindings().get(0).getExpression()).isEqualTo("#point.x");
-			softly.assertThat(query.getBindings().get(0).getParameterName()).isEqualTo("__synthetic_0__");
-			softly.assertThat(query.getBindings().get(1).getExpression()).isEqualTo("#point.y");
-			softly.assertThat(query.getBindings().get(1).getParameterName()).isEqualTo("__synthetic_1__");
-		});
+		assertThat(bindings.get("__synthetic_0__").getExpressionString()).isEqualTo("#point.x");
+		assertThat(bindings.get("__synthetic_1__").getExpressionString()).isEqualTo("${point.y}");
 	}
 }

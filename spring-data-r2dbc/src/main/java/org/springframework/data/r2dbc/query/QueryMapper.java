@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import org.springframework.data.r2dbc.dialect.R2dbcDialect;
 import org.springframework.data.relational.core.dialect.Escaper;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
-import org.springframework.data.relational.core.query.Criteria;
 import org.springframework.data.relational.core.query.CriteriaDefinition;
 import org.springframework.data.relational.core.query.CriteriaDefinition.Comparator;
 import org.springframework.data.relational.core.query.ValueFunction;
@@ -58,6 +57,7 @@ import org.springframework.util.ClassUtils;
  * @author Roman Chigvintsev
  * @author Manousos Mathioudakis
  * @author Jens Schauder
+ * @author Yan Qiang
  */
 public class QueryMapper {
 
@@ -102,35 +102,6 @@ public class QueryMapper {
 	 * @param sort must not be {@literal null}.
 	 * @param entity related {@link RelationalPersistentEntity}, can be {@literal null}.
 	 * @return
-	 * @deprecated without replacement.
-	 */
-	@Deprecated(since = "3.2", forRemoval = true)
-	public Sort getMappedObject(Sort sort, @Nullable RelationalPersistentEntity<?> entity) {
-
-		if (entity == null) {
-			return sort;
-		}
-
-		List<Sort.Order> mappedOrder = new ArrayList<>();
-
-		for (Sort.Order order : sort) {
-
-			SqlSort.validate(order);
-
-			Field field = createPropertyField(entity, SqlIdentifier.unquoted(order.getProperty()), this.mappingContext);
-			mappedOrder.add(
-					Sort.Order.by(toSql(field.getMappedColumnName())).with(order.getNullHandling()).with(order.getDirection()));
-		}
-
-		return Sort.by(mappedOrder);
-	}
-
-	/**
-	 * Map the {@link Sort} object to apply field name mapping using {@link Class the type to read}.
-	 *
-	 * @param sort must not be {@literal null}.
-	 * @param entity related {@link RelationalPersistentEntity}, can be {@literal null}.
-	 * @return
 	 * @since 1.1
 	 */
 	public List<OrderByField> getMappedSort(Table table, Sort sort, @Nullable RelationalPersistentEntity<?> entity) {
@@ -142,14 +113,12 @@ public class QueryMapper {
 			SqlSort.validate(order);
 
 			OrderByField simpleOrderByField = createSimpleOrderByField(table, entity, order);
-			OrderByField orderBy = simpleOrderByField
-					.withNullHandling(order.getNullHandling());
+			OrderByField orderBy = simpleOrderByField.withNullHandling(order.getNullHandling());
 			mappedOrder.add(order.isAscending() ? orderBy.asc() : orderBy.desc());
 		}
 
 		return mappedOrder;
 	}
-
 
 	private OrderByField createSimpleOrderByField(Table table, RelationalPersistentEntity<?> entity, Sort.Order order) {
 
@@ -217,35 +186,6 @@ public class QueryMapper {
 
 		Assert.notNull(markers, "BindMarkers must not be null");
 		Assert.notNull(criteria, "CriteriaDefinition must not be null");
-		Assert.notNull(table, "Table must not be null");
-
-		MutableBindings bindings = new MutableBindings(markers);
-
-		if (criteria.isEmpty()) {
-			throw new IllegalArgumentException("Cannot map empty Criteria");
-		}
-
-		Condition mapped = unroll(criteria, table, entity, bindings);
-
-		return new BoundCondition(bindings, mapped);
-	}
-
-	/**
-	 * Map a {@link Criteria} object into {@link Condition} and consider value/{@code NULL} {@link Bindings}.
-	 *
-	 * @param markers bind markers object, must not be {@literal null}.
-	 * @param criteria criteria definition to map, must not be {@literal null}.
-	 * @param table must not be {@literal null}.
-	 * @param entity related {@link RelationalPersistentEntity}, can be {@literal null}.
-	 * @return the mapped {@link BoundCondition}.
-	 * @deprecated since 1.1.
-	 */
-	@Deprecated
-	public BoundCondition getMappedObject(BindMarkers markers, Criteria criteria, Table table,
-			@Nullable RelationalPersistentEntity<?> entity) {
-
-		Assert.notNull(markers, "BindMarkers must not be null");
-		Assert.notNull(criteria, "Criteria must not be null");
 		Assert.notNull(table, "Table must not be null");
 
 		MutableBindings bindings = new MutableBindings(markers);
@@ -364,7 +304,7 @@ public class QueryMapper {
 		Class<?> typeHint;
 
 		Comparator comparator = criteria.getComparator();
-		if (criteria.getValue()instanceof Parameter parameter) {
+		if (criteria.getValue() instanceof Parameter parameter) {
 
 			mappedValue = convertValue(comparator, parameter.getValue(), propertyField.getTypeHint());
 			typeHint = getTypeHint(mappedValue, actualType.getType(), parameter);
@@ -411,7 +351,8 @@ public class QueryMapper {
 	@Nullable
 	private Object convertValue(Comparator comparator, @Nullable Object value, TypeInformation<?> typeHint) {
 
-		if (Comparator.IN.equals(comparator) && value instanceof Collection<?> collection && !collection.isEmpty()) {
+		if ((Comparator.IN.equals(comparator) || Comparator.NOT_IN.equals(comparator))
+				&& value instanceof Collection<?> collection && !collection.isEmpty()) {
 
 			Collection<Object> mapped = new ArrayList<>(collection.size());
 

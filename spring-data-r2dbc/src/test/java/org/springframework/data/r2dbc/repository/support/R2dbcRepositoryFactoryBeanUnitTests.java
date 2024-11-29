@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2023 the original author or authors.
+ * Copyright 2021-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,8 @@ import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.r2dbc.dialect.H2Dialect;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
-import org.springframework.data.repository.query.ReactiveExtensionAwareQueryMethodEvaluationContextProvider;
+import org.springframework.data.spel.EvaluationContextProvider;
+import org.springframework.data.spel.ReactiveExtensionAwareEvaluationContextProvider;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -49,8 +50,8 @@ class R2dbcRepositoryFactoryBeanUnitTests {
 		Object factory = ReflectionTestUtils.getField(factoryBean, "factory");
 		Object evaluationContextProvider = ReflectionTestUtils.getField(factory, "evaluationContextProvider");
 
-		assertThat(evaluationContextProvider).isInstanceOf(ReactiveExtensionAwareQueryMethodEvaluationContextProvider.class)
-				.isNotEqualTo(ReactiveExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
+		assertThat(evaluationContextProvider).isInstanceOf(ReactiveExtensionAwareEvaluationContextProvider.class)
+				.isNotEqualTo(EvaluationContextProvider.DEFAULT);
 	}
 
 	static class Person {}

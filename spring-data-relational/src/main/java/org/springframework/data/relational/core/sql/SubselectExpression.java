@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,5 +26,15 @@ public class SubselectExpression extends Subselect implements Expression {
 	SubselectExpression(Select subselect) {
 
 		super(subselect);
+	}
+
+	/**
+	 * Wraps a Select in a {@link SubselectExpression}, for using it as an expression in function calls or similar.
+	 *
+	 * @author Jens Schauder
+	 * @since 3.4
+	 */
+	public static Expression of(Select subselect) {
+		return new SubselectExpression(subselect);
 	}
 }

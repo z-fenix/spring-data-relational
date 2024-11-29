@@ -9,7 +9,8 @@ target/
 .sonar4clipse
 *.sonar4clipseExternals
 *.graphml
-*.json
+package-lock.json
+.mvn/.develocity
 
 build/
 node_modules

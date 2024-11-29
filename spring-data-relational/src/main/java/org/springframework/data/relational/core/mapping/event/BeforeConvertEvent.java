@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 package org.springframework.data.relational.core.mapping.event;
-
-import org.springframework.data.relational.core.conversion.AggregateChange;
 
 import java.io.Serial;
 
@@ -37,7 +35,7 @@ import java.io.Serial;
  * <li>SQL statements get applied to the database.</li>
  * <li>{@link AfterSaveCallback} and {@link AfterSaveEvent} get published.</li>
  * </ol>
- * 
+ *
  * @since 1.1
  * @author Jens Schauder
  * @author Mark Paluch

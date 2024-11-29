@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,14 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.convert.ConverterNotFoundException;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.convert.converter.ConverterRegistry;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.jdbc.core.mapping.AggregateReference;
 import org.springframework.data.jdbc.core.mapping.JdbcValue;
 import org.springframework.data.jdbc.support.JdbcUtil;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
+import org.springframework.data.mapping.model.ValueExpressionEvaluator;
 import org.springframework.data.relational.core.conversion.MappingRelationalConverter;
 import org.springframework.data.relational.core.conversion.ObjectPath;
 import org.springframework.data.relational.core.conversion.RelationalConverter;
@@ -79,7 +80,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 	 * {@link #MappingJdbcConverter(RelationalMappingContext, RelationResolver, CustomConversions, JdbcTypeFactory)}
 	 * (MappingContext, RelationResolver, JdbcTypeFactory)} to convert arrays and large objects into JDBC-specific types.
 	 *
-	 * @param context must not be {@literal null}.
+	 * @param context          must not be {@literal null}.
 	 * @param relationResolver used to fetch additional relations from the database. Must not be {@literal null}.
 	 */
 	public MappingJdbcConverter(RelationalMappingContext context, RelationResolver relationResolver) {
@@ -90,17 +91,19 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 
 		this.typeFactory = JdbcTypeFactory.unsupported();
 		this.relationResolver = relationResolver;
+
+		registerAggregateReferenceConverters();
 	}
 
 	/**
 	 * Creates a new {@link MappingJdbcConverter} given {@link MappingContext}.
 	 *
-	 * @param context must not be {@literal null}.
+	 * @param context          must not be {@literal null}.
 	 * @param relationResolver used to fetch additional relations from the database. Must not be {@literal null}.
-	 * @param typeFactory must not be {@literal null}
+	 * @param typeFactory      must not be {@literal null}
 	 */
 	public MappingJdbcConverter(RelationalMappingContext context, RelationResolver relationResolver,
-			CustomConversions conversions, JdbcTypeFactory typeFactory) {
+								CustomConversions conversions, JdbcTypeFactory typeFactory) {
 
 		super(context, conversions);
 
@@ -109,10 +112,18 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 
 		this.typeFactory = typeFactory;
 		this.relationResolver = relationResolver;
+
+		registerAggregateReferenceConverters();
+	}
+
+	private void registerAggregateReferenceConverters() {
+
+		ConverterRegistry registry = (ConverterRegistry) getConversionService();
+		AggregateReferenceConverters.getConvertersToRegister(getConversionService()).forEach(registry::addConverter);
 	}
 
 	@Nullable
-	private Class<?> getEntityColumnType(Class<?> type) {
+	private Class<?> getEntityColumnType(TypeInformation<?> type) {
 
 		RelationalPersistentEntity<?> persistentEntity = getMappingContext().getPersistentEntity(type);
 
@@ -153,7 +164,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		}
 
 		if (property.isEntity()) {
-			Class<?> columnType = getEntityColumnType(property.getActualType());
+			Class<?> columnType = getEntityColumnType(property.getTypeInformation().getActualType());
 
 			if (columnType != null) {
 				return columnType;
@@ -181,9 +192,9 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 			return value;
 		}
 
-		if (value instanceof Array) {
+		if (value instanceof Array array) {
 			try {
-				return super.readValue(((Array) value).getArray(), type);
+				return super.readValue(array.getArray(), type);
 			} catch (SQLException | ConverterNotFoundException e) {
 				LOG.info("Failed to extract a value of type %s from an Array; Attempting to use standard conversions", e);
 			}
@@ -230,17 +241,16 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 	}
 
 	@Override
-	public JdbcValue writeJdbcValue(@Nullable Object value, Class<?> columnType, SQLType sqlType) {
+	public JdbcValue writeJdbcValue(@Nullable Object value, TypeInformation<?> columnType, SQLType sqlType) {
 
-		JdbcValue jdbcValue = tryToConvertToJdbcValue(value);
-		if (jdbcValue != null) {
-			return jdbcValue;
+		TypeInformation<?> targetType = canWriteAsJdbcValue(value) ? TypeInformation.of(JdbcValue.class) : columnType;
+		Object convertedValue = writeValue(value, targetType);
+
+		if (convertedValue instanceof JdbcValue result) {
+			return result;
 		}
 
-		Object convertedValue = writeValue(value, TypeInformation.of(columnType));
-
 		if (convertedValue == null || !convertedValue.getClass().isArray()) {
-
 			return JdbcValue.of(convertedValue, sqlType);
 		}
 
@@ -258,23 +268,9 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		return JdbcValue.of(convertedValue, JDBCType.BINARY);
 	}
 
-	@Nullable
-	private JdbcValue tryToConvertToJdbcValue(@Nullable Object value) {
-
-		if (canWriteAsJdbcValue(value)) {
-
-			Object converted = writeValue(value, TypeInformation.of(JdbcValue.class));
-			if (converted instanceof JdbcValue) {
-				return (JdbcValue) converted;
-			}
-		}
-
-		return null;
-	}
-
 	@SuppressWarnings("unchecked")
 	@Override
-	public <R> R readAndResolve(Class<R> type, RowDocument source, Identifier identifier) {
+	public <R> R readAndResolve(TypeInformation<R> type, RowDocument source, Identifier identifier) {
 
 		RelationalPersistentEntity<R> entity = (RelationalPersistentEntity<R>) getMappingContext()
 				.getRequiredPersistentEntity(type);
@@ -289,7 +285,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 
 	@Override
 	protected RelationalPropertyValueProvider newValueProvider(RowDocumentAccessor documentAccessor,
-			SpELExpressionEvaluator evaluator, ConversionContext context) {
+															   ValueExpressionEvaluator evaluator, ConversionContext context) {
 
 		if (context instanceof ResolvingConversionContext rcc) {
 
@@ -318,7 +314,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		private final Identifier identifier;
 
 		private ResolvingRelationalPropertyValueProvider(AggregatePathValueProvider delegate, RowDocumentAccessor accessor,
-				ResolvingConversionContext context, Identifier identifier) {
+														 ResolvingConversionContext context, Identifier identifier) {
 
 			AggregatePath path = context.aggregatePath();
 
@@ -326,7 +322,8 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 			this.accessor = accessor;
 			this.context = context;
 			this.identifier = path.isEntity()
-					? potentiallyAppendIdentifier(identifier, path.getRequiredLeafEntity(), delegate::getPropertyValue)
+					? potentiallyAppendIdentifier(identifier, path.getRequiredLeafEntity(),
+					property -> delegate.getValue(path.append(property)))
 					: identifier;
 		}
 
@@ -334,7 +331,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		 * Conditionally append the identifier if the entity has an identifier property.
 		 */
 		static Identifier potentiallyAppendIdentifier(Identifier base, RelationalPersistentEntity<?> entity,
-				Function<RelationalPersistentProperty, Object> getter) {
+													  Function<RelationalPersistentProperty, Object> getter) {
 
 			if (entity.hasIdProperty()) {
 
@@ -365,15 +362,20 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 				if (property.isCollectionLike() || property.isMap()) {
 
 					Identifier identifierToUse = this.identifier;
+					AggregatePath idDefiningParentPath = aggregatePath.getIdDefiningParentPath();
 
-					if (property.getOwner().hasIdProperty()) {
+					// note that the idDefiningParentPath might not itself have an id property, but have a combination of back
+					// references and possibly keys, that form an id
+					if (idDefiningParentPath.hasIdProperty()) {
 
-						Object id = this.identifier.get(property.getOwner().getRequiredIdProperty().getColumnName());
+						RelationalPersistentProperty identifier = idDefiningParentPath.getRequiredIdProperty();
+						AggregatePath idPath = idDefiningParentPath.append(identifier);
+						Object value = delegate.getValue(idPath);
 
-						if (id != null) {
-							identifierToUse = Identifier.of(aggregatePath.getTableInfo().reverseColumnInfo().name(), id,
-									Object.class);
-						}
+						Assert.state(value != null, "Identifier value must not be null at this point");
+
+						identifierToUse = Identifier.of(aggregatePath.getTableInfo().reverseColumnInfo().name(), value,
+								identifier.getActualType());
 					}
 
 					Iterable<Object> allByPath = relationResolver.findAllByPath(identifierToUse,
@@ -404,7 +406,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		@Override
 		public boolean hasValue(RelationalPersistentProperty property) {
 
-			if (property.isCollectionLike() || property.isMap()) {
+			if ((property.isCollectionLike() && property.isEntity()) || property.isMap()) {
 				// attempt relation fetch
 				return true;
 			}
@@ -428,11 +430,37 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 		}
 
 		@Override
+		public boolean hasNonEmptyValue(RelationalPersistentProperty property) {
+
+			if ((property.isCollectionLike() && property.isEntity()) || property.isMap()) {
+				// attempt relation fetch
+				return true;
+			}
+
+			AggregatePath aggregatePath = context.aggregatePath();
+
+			if (property.isEntity()) {
+
+				RelationalPersistentEntity<?> entity = getMappingContext().getRequiredPersistentEntity(property);
+				if (entity.hasIdProperty()) {
+
+					RelationalPersistentProperty referenceId = entity.getRequiredIdProperty();
+					AggregatePath toUse = aggregatePath.append(referenceId);
+					return delegate.hasValue(toUse);
+				}
+
+				return delegate.hasValue(aggregatePath.getTableInfo().reverseColumnInfo().alias());
+			}
+
+			return delegate.hasNonEmptyValue(aggregatePath);
+		}
+
+		@Override
 		public RelationalPropertyValueProvider withContext(ConversionContext context) {
 
 			return context == this.context ? this
 					: new ResolvingRelationalPropertyValueProvider(delegate.withContext(context), accessor,
-							(ResolvingConversionContext) context, identifier);
+					(ResolvingConversionContext) context, identifier);
 		}
 	}
 
@@ -444,7 +472,7 @@ public class MappingJdbcConverter extends MappingRelationalConverter implements 
 	 * @param identifier
 	 */
 	private record ResolvingConversionContext(ConversionContext delegate, AggregatePath aggregatePath,
-			Identifier identifier) implements ConversionContext {
+											  Identifier identifier) implements ConversionContext {
 
 		@Override
 		public <S> S convert(Object source, TypeInformation<? extends S> typeHint) {

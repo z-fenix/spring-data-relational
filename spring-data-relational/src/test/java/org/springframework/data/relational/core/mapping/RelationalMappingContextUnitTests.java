@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2023 the original author or authors.
+ * Copyright 2018-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ package org.springframework.data.relational.core.mapping;
 
 import static org.assertj.core.api.Assertions.*;
 
-import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -32,10 +32,12 @@ import org.springframework.data.relational.core.sql.SqlIdentifier;
  * Unit tests for {@link RelationalMappingContext}.
  *
  * @author Toshiaki Maki
+ * @author Jens Schauder
  */
 public class RelationalMappingContextUnitTests {
+
 	RelationalMappingContext context = new RelationalMappingContext();
-	SimpleTypeHolder holder = new SimpleTypeHolder(new HashSet<>(Arrays.asList(UUID.class)), true);
+	SimpleTypeHolder holder = new SimpleTypeHolder(new HashSet<>(List.of(UUID.class)), true);
 
 	@BeforeEach
 	void setup() {
@@ -104,6 +106,20 @@ public class RelationalMappingContextUnitTests {
 		assertThat(name.getColumnName()).isEqualTo(SqlIdentifier.quoted("PRNT_CHLD_NAME"));
 	}
 
+	@Test // GH-1657
+	void aggregatePathsOfBasePropertyForDifferentInheritedEntitiesAreDifferent() {
+
+		PersistentPropertyPath<RelationalPersistentProperty> path1 = context.getPersistentPropertyPath("name",
+				Inherit1.class);
+		PersistentPropertyPath<RelationalPersistentProperty> path2 = context.getPersistentPropertyPath("name",
+				Inherit2.class);
+
+		AggregatePath aggregatePath1 = context.getAggregatePath(path1);
+		AggregatePath aggregatePath2 = context.getAggregatePath(path2);
+
+		assertThat(aggregatePath1).isNotEqualTo(aggregatePath2);
+	}
+
 	static class EntityWithUuid {
 		@Id UUID uuid;
 	}
@@ -120,5 +136,13 @@ public class RelationalMappingContextUnitTests {
 	static class Child {
 		String name;
 	}
+
+	static class Base {
+		String name;
+	}
+
+	static class Inherit1 extends Base {}
+
+	static class Inherit2 extends Base {}
 
 }

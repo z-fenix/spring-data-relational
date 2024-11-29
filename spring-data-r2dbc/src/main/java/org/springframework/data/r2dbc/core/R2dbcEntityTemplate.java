@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,22 @@ package org.springframework.data.r2dbc.core;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.Row;
 import io.r2dbc.spi.RowMetadata;
+import io.r2dbc.spi.Statement;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.beans.FeatureDescriptor;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.reactivestreams.Publisher;
+
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -46,7 +49,6 @@ import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.mapping.callback.ReactiveEntityCallbacks;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.projection.EntityProjection;
-import org.springframework.data.projection.ProjectionInformation;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.r2dbc.convert.R2dbcConverter;
 import org.springframework.data.r2dbc.dialect.DialectResolver;
@@ -56,6 +58,8 @@ import org.springframework.data.r2dbc.mapping.event.AfterConvertCallback;
 import org.springframework.data.r2dbc.mapping.event.AfterSaveCallback;
 import org.springframework.data.r2dbc.mapping.event.BeforeConvertCallback;
 import org.springframework.data.r2dbc.mapping.event.BeforeSaveCallback;
+import org.springframework.data.relational.core.conversion.AbstractRelationalConverter;
+import org.springframework.data.relational.core.mapping.PersistentPropertyTranslator;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.query.Criteria;
@@ -68,6 +72,7 @@ import org.springframework.data.relational.core.sql.Functions;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.data.relational.core.sql.Table;
 import org.springframework.data.relational.domain.RowDocument;
+import org.springframework.data.util.Predicates;
 import org.springframework.data.util.ProxyUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -89,6 +94,8 @@ import org.springframework.util.Assert;
  * @author Jens Schauder
  * @author Jose Luis Leon
  * @author Robert Heim
+ * @author Sebastian Wieland
+ * @author Mikhail Polivakha
  * @since 1.1
  */
 public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAware, ApplicationContextAware {
@@ -104,6 +111,8 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 	private final SpelAwareProxyProjectionFactory projectionFactory;
 
 	private @Nullable ReactiveEntityCallbacks entityCallbacks;
+
+	private Function<Statement, Statement> statementFilterFunction = Function.identity();
 
 	/**
 	 * Create a new {@link R2dbcEntityTemplate} given {@link ConnectionFactory}.
@@ -165,6 +174,19 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		this.converter = dataAccessStrategy.getConverter();
 		this.mappingContext = strategy.getConverter().getMappingContext();
 		this.projectionFactory = new SpelAwareProxyProjectionFactory();
+	}
+
+	/**
+	 * Set a {@link Function Statement Filter Function} that is applied to every {@link Statement}.
+	 *
+	 * @param statementFilterFunction must not be {@literal null}.
+	 * @since 3.4
+	 */
+	public void setStatementFilterFunction(Function<Statement, Statement> statementFilterFunction) {
+
+		Assert.notNull(statementFilterFunction, "StatementFilterFunction must not be null");
+
+		this.statementFilterFunction = statementFilterFunction;
 	}
 
 	@Override
@@ -253,18 +275,11 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 
 	Mono<Long> doCount(Query query, Class<?> entityClass, SqlIdentifier tableName) {
 
-		RelationalPersistentEntity<?> entity = getRequiredEntity(entityClass);
 		StatementMapper statementMapper = dataAccessStrategy.getStatementMapper().forType(entityClass);
 
 		StatementMapper.SelectSpec selectSpec = statementMapper //
 				.createSelect(tableName) //
-				.doWithTable((table, spec) -> {
-
-					Expression countExpression = entity.hasIdProperty()
-							? table.column(entity.getRequiredIdProperty().getColumnName())
-							: Expressions.just("1");
-					return spec.withProjection(Functions.count(countExpression));
-				});
+				.withProjection(Functions.count(Expressions.just("*")));
 
 		Optional<CriteriaDefinition> criteria = query.getCriteria();
 		if (criteria.isPresent()) {
@@ -274,6 +289,7 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		PreparedOperation<?> operation = statementMapper.getMappedObject(selectSpec);
 
 		return this.databaseClient.sql(operation) //
+				.filter(statementFilterFunction) //
 				.map((r, md) -> r.get(0, Long.class)) //
 				.first() //
 				.defaultIfEmpty(0L);
@@ -290,17 +306,9 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 
 	Mono<Boolean> doExists(Query query, Class<?> entityClass, SqlIdentifier tableName) {
 
-		RelationalPersistentEntity<?> entity = getRequiredEntity(entityClass);
 		StatementMapper statementMapper = dataAccessStrategy.getStatementMapper().forType(entityClass);
-
-		StatementMapper.SelectSpec selectSpec = statementMapper.createSelect(tableName).limit(1);
-		if (entity.hasIdProperty()) {
-			selectSpec = selectSpec //
-					.withProjection(entity.getRequiredIdProperty().getColumnName());
-
-		} else {
-			selectSpec = selectSpec.withProjection(Expressions.just("1"));
-		}
+		StatementMapper.SelectSpec selectSpec = statementMapper.createSelect(tableName).limit(1)
+				.withProjection(Expressions.just("1"));
 
 		Optional<CriteriaDefinition> criteria = query.getCriteria();
 		if (criteria.isPresent()) {
@@ -310,6 +318,7 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		PreparedOperation<?> operation = statementMapper.getMappedObject(selectSpec);
 
 		return this.databaseClient.sql(operation) //
+				.filter(statementFilterFunction) //
 				.map((r, md) -> r) //
 				.first() //
 				.hasElement();
@@ -322,14 +331,15 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		Assert.notNull(entityClass, "Entity class must not be null");
 
 		SqlIdentifier tableName = getTableName(entityClass);
-		return doSelect(query, entityClass, tableName, entityClass, RowsFetchSpec::all);
+		return doSelect(query, entityClass, tableName, entityClass, RowsFetchSpec::all, null);
 	}
 
 	@SuppressWarnings("unchecked")
 	<T, P extends Publisher<T>> P doSelect(Query query, Class<?> entityClass, SqlIdentifier tableName,
-			Class<T> returnType, Function<RowsFetchSpec<T>, P> resultHandler) {
+			Class<T> returnType, Function<RowsFetchSpec<T>, P> resultHandler, @Nullable Integer fetchSize) {
 
-		RowsFetchSpec<T> fetchSpec = doSelect(query, entityClass, tableName, returnType);
+		RowsFetchSpec<T> fetchSpec = doSelect(query, entityClass, tableName, returnType,
+				fetchSize != null ? statement -> statement.fetchSize(fetchSize) : Function.identity());
 
 		P result = resultHandler.apply(fetchSpec);
 
@@ -341,13 +351,13 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 	}
 
 	private <T> RowsFetchSpec<T> doSelect(Query query, Class<?> entityType, SqlIdentifier tableName,
-			Class<T> returnType) {
+			Class<T> returnType, Function<? super Statement, ? extends Statement> filterFunction) {
 
 		StatementMapper statementMapper = dataAccessStrategy.getStatementMapper().forType(entityType);
 
 		StatementMapper.SelectSpec selectSpec = statementMapper //
 				.createSelect(tableName) //
-				.doWithTable((table, spec) -> spec.withProjection(getSelectProjection(table, query, returnType)));
+				.doWithTable((table, spec) -> spec.withProjection(getSelectProjection(table, query, entityType, returnType)));
 
 		if (query.getLimit() > 0) {
 			selectSpec = selectSpec.limit(query.getLimit());
@@ -368,13 +378,17 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 
 		PreparedOperation<?> operation = statementMapper.getMappedObject(selectSpec);
 
-		return getRowsFetchSpec(databaseClient.sql(operation), entityType, returnType);
+		return getRowsFetchSpec(
+				databaseClient.sql(operation).filter(statementFilterFunction.andThen(filterFunction)),
+			entityType,
+			returnType
+		);
 	}
 
 	@Override
 	public <T> Mono<T> selectOne(Query query, Class<T> entityClass) throws DataAccessException {
 		return doSelect(query.isLimited() ? query : query.limit(2), entityClass, getTableName(entityClass), entityClass,
-				RowsFetchSpec::one);
+				RowsFetchSpec::one, null);
 	}
 
 	@Override
@@ -400,7 +414,7 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		}
 
 		PreparedOperation<?> operation = statementMapper.getMappedObject(selectSpec);
-		return this.databaseClient.sql(operation).fetch().rowsUpdated();
+		return this.databaseClient.sql(operation).filter(statementFilterFunction).fetch().rowsUpdated();
 	}
 
 	@Override
@@ -425,7 +439,7 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		}
 
 		PreparedOperation<?> operation = statementMapper.getMappedObject(deleteSpec);
-		return this.databaseClient.sql(operation).fetch().rowsUpdated().defaultIfEmpty(0L);
+		return this.databaseClient.sql(operation).filter(statementFilterFunction).fetch().rowsUpdated().defaultIfEmpty(0L);
 	}
 
 	// -------------------------------------------------------------------------
@@ -434,11 +448,18 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 
 	@Override
 	public <T> RowsFetchSpec<T> query(PreparedOperation<?> operation, Class<T> entityClass) {
+		return query(operation, entityClass, entityClass);
+	}
+
+	@Override
+	public <T> RowsFetchSpec<T> query(PreparedOperation<?> operation, Class<?> entityClass, Class<T> resultType)
+			throws DataAccessException {
 
 		Assert.notNull(operation, "PreparedOperation must not be null");
 		Assert.notNull(entityClass, "Entity class must not be null");
 
-		return new EntityCallbackAdapter<>(getRowsFetchSpec(databaseClient.sql(operation), entityClass, entityClass),
+		return new EntityCallbackAdapter<>(
+				getRowsFetchSpec(databaseClient.sql(operation).filter(statementFilterFunction), entityClass, resultType),
 				getTableNameOrEmpty(entityClass));
 	}
 
@@ -448,7 +469,8 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		Assert.notNull(operation, "PreparedOperation must not be null");
 		Assert.notNull(rowMapper, "Row mapper must not be null");
 
-		return new EntityCallbackAdapter<>(databaseClient.sql(operation).map(rowMapper), SqlIdentifier.EMPTY);
+		return new EntityCallbackAdapter<>(databaseClient.sql(operation).filter(statementFilterFunction).map(rowMapper),
+				SqlIdentifier.EMPTY);
 	}
 
 	@Override
@@ -459,7 +481,8 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		Assert.notNull(entityClass, "Entity class must not be null");
 		Assert.notNull(rowMapper, "Row mapper must not be null");
 
-		return new EntityCallbackAdapter<>(databaseClient.sql(operation).map(rowMapper), getTableNameOrEmpty(entityClass));
+		return new EntityCallbackAdapter<>(databaseClient.sql(operation).filter(statementFilterFunction).map(rowMapper),
+				getTableNameOrEmpty(entityClass));
 	}
 
 	// -------------------------------------------------------------------------
@@ -537,6 +560,8 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 
 		return this.databaseClient.sql(operation) //
 				.filter(statement -> {
+
+					statement = statementFilterFunction.apply(statement);
 
 					if (identifierColumns.isEmpty()) {
 						return statement.returnGeneratedValues();
@@ -629,6 +654,7 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		PreparedOperation<?> operation = mapper.getMappedObject(updateSpec);
 
 		return this.databaseClient.sql(operation) //
+				.filter(statementFilterFunction) //
 				.fetch() //
 				.rowsUpdated() //
 				.handle((rowsUpdated, sink) -> {
@@ -769,18 +795,16 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		return (RelationalPersistentEntity) getRequiredEntity(entityType);
 	}
 
-	private <T> List<Expression> getSelectProjection(Table table, Query query, Class<T> returnType) {
+	private <T> List<Expression> getSelectProjection(Table table, Query query, Class<?> entityType, Class<T> returnType) {
 
 		if (query.getColumns().isEmpty()) {
 
-			if (returnType.isInterface()) {
+			EntityProjection<T, ?> projection = converter.introspectProjection(returnType, entityType);
 
-				ProjectionInformation projectionInformation = projectionFactory.getProjectionInformation(returnType);
+			if (projection.isProjection() && projection.isClosedProjection()) {
 
-				if (projectionInformation.isClosed()) {
-					return projectionInformation.getInputProperties().stream().map(FeatureDescriptor::getName).map(table::column)
-							.collect(Collectors.toList());
-				}
+				return computeProjectedFields(table, returnType, projection);
+
 			}
 
 			return Collections.singletonList(table.asterisk());
@@ -789,25 +813,61 @@ public class R2dbcEntityTemplate implements R2dbcEntityOperations, BeanFactoryAw
 		return query.getColumns().stream().map(table::column).collect(Collectors.toList());
 	}
 
-	private <T> RowsFetchSpec<T> getRowsFetchSpec(DatabaseClient.GenericExecuteSpec executeSpec, Class<?> entityType,
+	@SuppressWarnings("unchecked")
+	private <T> List<Expression> computeProjectedFields(Table table, Class<T> returnType,
+			EntityProjection<T, ?> projection) {
+
+		if (returnType.isInterface()) {
+
+			Set<String> properties = new LinkedHashSet<>();
+			projection.forEach(it -> {
+				properties.add(it.getPropertyPath().getSegment());
+			});
+
+			return properties.stream().map(table::column).collect(Collectors.toList());
+		}
+
+		Set<SqlIdentifier> properties = new LinkedHashSet<>();
+		// DTO projections use merged metadata between domain type and result type
+		PersistentPropertyTranslator translator = PersistentPropertyTranslator.create(
+				mappingContext.getRequiredPersistentEntity(projection.getDomainType()),
+				Predicates.negate(RelationalPersistentProperty::hasExplicitColumnName));
+
+		RelationalPersistentEntity<?> persistentEntity = mappingContext
+				.getRequiredPersistentEntity(projection.getMappedType());
+		for (RelationalPersistentProperty property : persistentEntity) {
+			properties.add(translator.translate(property).getColumnName());
+		}
+
+		return properties.stream().map(table::column).collect(Collectors.toList());
+	}
+
+	@SuppressWarnings("unchecked")
+	public <T> RowsFetchSpec<T> getRowsFetchSpec(DatabaseClient.GenericExecuteSpec executeSpec, Class<?> entityType,
 			Class<T> resultType) {
 
 		boolean simpleType = getConverter().isSimpleType(resultType);
 
 		BiFunction<Row, RowMetadata, T> rowMapper;
 
-		if (simpleType) {
+		// Bridge-code: Consider Converter<Row, T> until we have fully migrated to RowDocument
+		if (converter instanceof AbstractRelationalConverter relationalConverter
+				&& relationalConverter.getConversions().hasCustomReadTarget(Row.class, resultType)) {
+
+			ConversionService conversionService = relationalConverter.getConversionService();
+			rowMapper = (row, rowMetadata) -> (T) conversionService.convert(row, resultType);
+		} else if (simpleType) {
 			rowMapper = dataAccessStrategy.getRowMapper(resultType);
 		} else {
 
 			EntityProjection<T, ?> projection = converter.introspectProjection(resultType, entityType);
+			Class<T> typeToRead = projection.isProjection() ? resultType
+					: resultType.isInterface() ? (Class<T>) entityType : resultType;
 
 			rowMapper = (row, rowMetadata) -> {
 
-				RowDocument document = dataAccessStrategy.toRowDocument(resultType, row, rowMetadata.getColumnMetadatas());
-
-				return projection.isProjection() ? converter.project(projection, document)
-						: converter.read(resultType, document);
+				RowDocument document = dataAccessStrategy.toRowDocument(typeToRead, row, rowMetadata.getColumnMetadatas());
+				return converter.project(projection, document);
 			};
 		}
 

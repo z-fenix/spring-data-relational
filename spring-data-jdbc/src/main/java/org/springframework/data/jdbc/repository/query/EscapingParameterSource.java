@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,5 +50,21 @@ class EscapingParameterSource implements SqlParameterSource {
 			return valueFunction.apply(escaper);
 		}
 		return value;
+	}
+
+
+	@Override
+	public int getSqlType(String paramName) {
+		return parameterSource.getSqlType(paramName);
+	}
+
+	@Override
+	public String getTypeName(String paramName) {
+		return parameterSource.getTypeName(paramName);
+	}
+
+	@Override
+	public String[] getParameterNames() {
+		return parameterSource.getParameterNames();
 	}
 }

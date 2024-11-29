@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,14 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.jdbc.core.PersistentPropertyPathTestUtils;
+import org.springframework.data.jdbc.core.mapping.AggregateReference;
 import org.springframework.data.jdbc.core.mapping.JdbcMappingContext;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Embedded.OnEmpty;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
+import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.relational.core.sql.Aliased;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.lang.Nullable;
@@ -38,17 +40,18 @@ import org.springframework.lang.Nullable;
  * Unit tests for the {@link SqlGenerator} in a context of the {@link Embedded} annotation.
  *
  * @author Bastian Wilhelm
+ * @author Mark Paluch
  */
-public class SqlGeneratorEmbeddedUnitTests {
+class SqlGeneratorEmbeddedUnitTests {
 
 	private final RelationalMappingContext context = new JdbcMappingContext();
-	JdbcConverter converter = new MappingJdbcConverter(context, (identifier, path) -> {
+	private JdbcConverter converter = new MappingJdbcConverter(context, (identifier, path) -> {
 		throw new UnsupportedOperationException();
 	});
 	private SqlGenerator sqlGenerator;
 
 	@BeforeEach
-	public void setUp() {
+	void setUp() {
 		this.context.setForceQuote(false);
 		this.sqlGenerator = createSqlGenerator(DummyEntity.class);
 	}
@@ -59,7 +62,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void findOne() {
+	void findOne() {
 		final String sql = sqlGenerator.getFindOne();
 
 		assertSoftly(softly -> {
@@ -82,7 +85,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void findAll() {
+	void findAll() {
 		final String sql = sqlGenerator.getFindAll();
 
 		assertSoftly(softly -> {
@@ -105,7 +108,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void findAllInList() {
+	void findAllInList() {
 		final String sql = sqlGenerator.getFindAllInList();
 
 		assertSoftly(softly -> {
@@ -128,7 +131,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void insert() {
+	void insert() {
 		final String sql = sqlGenerator.getInsert(emptySet());
 
 		assertSoftly(softly -> {
@@ -150,7 +153,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-111
-	public void update() {
+	void update() {
 		final String sql = sqlGenerator.getUpdate();
 
 		assertSoftly(softly -> {
@@ -173,7 +176,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 
 	@Test // DATAJDBC-340
 	@Disabled // this is just broken right now
-	public void deleteByPath() {
+	void deleteByPath() {
 
 		final String sql = sqlGenerator
 				.createDeleteByPath(PersistentPropertyPathTestUtils.getPath("embedded.other", DummyEntity2.class, context));
@@ -190,7 +193,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void noJoinForEmbedded() {
+	void noJoinForEmbedded() {
 
 		SqlGenerator.Join join = generateJoin("embeddable", DummyEntity.class);
 
@@ -198,7 +201,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void columnForEmbeddedProperty() {
+	void columnForEmbeddedProperty() {
 
 		assertThat(generatedColumn("embeddable.test", DummyEntity.class)) //
 				.extracting( //
@@ -213,15 +216,21 @@ public class SqlGeneratorEmbeddedUnitTests {
 						SqlIdentifier.unquoted("test"));
 	}
 
+	@Test // GH-1695
+	void columnForEmbeddedPropertyWithPrefix() {
+		assertThat(generatedColumn("nested.childId", WithEmbeddedAndAggregateReference.class))
+				.hasToString("a.nested_child_id AS nested_child_id");
+	}
+
 	@Test // DATAJDBC-340
-	public void noColumnForEmbedded() {
+	void noColumnForEmbedded() {
 
 		assertThat(generatedColumn("embeddable", DummyEntity.class)) //
 				.isNull();
 	}
 
 	@Test // DATAJDBC-340
-	public void noJoinForPrefixedEmbedded() {
+	void noJoinForPrefixedEmbedded() {
 
 		SqlGenerator.Join join = generateJoin("prefixedEmbeddable", DummyEntity.class);
 
@@ -229,7 +238,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void columnForPrefixedEmbeddedProperty() {
+	void columnForPrefixedEmbeddedProperty() {
 
 		assertThat(generatedColumn("prefixedEmbeddable.test", DummyEntity.class)) //
 				.extracting( //
@@ -245,7 +254,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void noJoinForCascadedEmbedded() {
+	void noJoinForCascadedEmbedded() {
 
 		SqlGenerator.Join join = generateJoin("embeddable.embeddable", DummyEntity.class);
 
@@ -253,7 +262,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void columnForCascadedEmbeddedProperty() {
+	void columnForCascadedEmbeddedProperty() {
 
 		assertThat(generatedColumn("embeddable.embeddable.attr1", DummyEntity.class)) //
 				.extracting(c -> c.getName(), c -> c.getTable().getName(), c -> getAlias(c.getTable()), this::getAlias)
@@ -262,7 +271,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void joinForEmbeddedWithReference() {
+	void joinForEmbeddedWithReference() {
 
 		SqlGenerator.Join join = generateJoin("embedded.other", DummyEntity2.class);
 
@@ -277,7 +286,7 @@ public class SqlGeneratorEmbeddedUnitTests {
 	}
 
 	@Test // DATAJDBC-340
-	public void columnForEmbeddedWithReferenceProperty() {
+	void columnForEmbeddedWithReferenceProperty() {
 
 		assertThat(generatedColumn("embedded.other.value", DummyEntity2.class)) //
 				.extracting( //
@@ -350,6 +359,19 @@ public class SqlGeneratorEmbeddedUnitTests {
 
 	static class OtherEntity {
 		String value;
+	}
+
+	@Table("a")
+	private
+	record WithEmbeddedAndAggregateReference(@Id long id,
+			@Embedded.Nullable(prefix = "nested_") WithAggregateReference nested) {
+	}
+
+	private record WithAggregateReference(AggregateReference<Child, Long> childId) {
+	}
+
+	private record Child(@Id long id) {
+
 	}
 
 }

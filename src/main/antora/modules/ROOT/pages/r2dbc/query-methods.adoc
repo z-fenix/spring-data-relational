@@ -10,21 +10,21 @@ Defining such a query is a matter of declaring a method on the repository interf
 ----
 interface ReactivePersonRepository extends ReactiveSortingRepository<Person, Long> {
 
-  Flux<Person> findByFirstname(String firstname);                                   <1>
+    Flux<Person> findByFirstname(String firstname);                                   <1>
 
-  Flux<Person> findByFirstname(Publisher<String> firstname);                        <2>
+    Flux<Person> findByFirstname(Publisher<String> firstname);                        <2>
 
-  Flux<Person> findByFirstnameOrderByLastname(String firstname, Pageable pageable); <3>
+    Flux<Person> findByFirstnameOrderByLastname(String firstname, Pageable pageable); <3>
 
-  Mono<Person> findByFirstnameAndLastname(String firstname, String lastname);       <4>
+    Mono<Person> findByFirstnameAndLastname(String firstname, String lastname);       <4>
 
-  Mono<Person> findFirstByLastname(String lastname);                                <5>
+    Mono<Person> findFirstByLastname(String lastname);                                <5>
 
-  @Query("SELECT * FROM person WHERE lastname = :lastname")
-  Flux<Person> findByLastname(String lastname);                                     <6>
+    @Query("SELECT * FROM person WHERE lastname = :lastname")
+    Flux<Person> findByLastname(String lastname);                                     <6>
 
-  @Query("SELECT firstname, lastname FROM person WHERE lastname = $1")
-  Mono<Person> findFirstByLastname(String lastname);                                <7>
+    @Query("SELECT firstname, lastname FROM person WHERE lastname = $1")
+    Mono<Person> findFirstByLastname(String lastname);                                <7>
 }
 ----
 
@@ -147,11 +147,11 @@ Using keywords from the preceding table can be used in conjunction with `deleteâ
 ----
 interface ReactivePersonRepository extends ReactiveSortingRepository<Person, String> {
 
-  Mono<Integer> deleteByLastname(String lastname);            <1>
+    Mono<Integer> deleteByLastname(String lastname);            <1>
 
-  Mono<Void> deletePersonByLastname(String lastname);         <2>
+    Mono<Void> deletePersonByLastname(String lastname);         <2>
 
-  Mono<Boolean> deletePersonByLastname(String lastname);      <3>
+    Mono<Boolean> deletePersonByLastname(String lastname);      <3>
 }
 ----
 
@@ -182,10 +182,33 @@ Therefore also fields with auditing annotations do not get updated if they don't
 
 Alternatively, you can add custom modifying behavior by using the facilities described in xref:repositories/custom-implementations.adoc[Custom Implementations for Spring Data Repositories].
 
+[[r2dbc.query-methods.at-query]]
+== Using `@Query`
+
+The following example shows how to use `@Query` to declare a query method:
+
+.Declare a query method by using @Query
+[source,java]
+----
+interface UserRepository extends ReactiveCrudRepository<User, Long> {
+
+    @Query("select firstName, lastName from User u where u.emailAddress = :email")
+    Flux<User> findByEmailAddress(@Param("email") String email);
+}
+----
+
+WARNING: Note that String-based queries do not support pagination nor accept `Sort`, `PageRequest`, and `Limit` as a query parameter as for these queries the query would be required to be rewritten.
+If you want to apply limiting, please express this intent using SQL and bind the appropriate parameters to the query yourself.
+
+NOTE: Spring fully supports Java 8â€™s parameter name discovery based on the `-parameters` compiler flag.
+By using this flag in your build as an alternative to debug information, you can omit the `@Param` annotation for named parameters.
+
 [[r2dbc.repositories.queries.spel]]
 === Queries with SpEL Expressions
 
 Query string definitions can be used together with SpEL expressions to create dynamic queries at runtime.
+SpEL expressions can be used in two ways.
+
 SpEL expressions can provide predicate values which are evaluated right before running the query.
 
 Expressions expose method arguments through an array that contains all the arguments.
@@ -197,12 +220,24 @@ to declare the predicate value for `lastname` (which is equivalent to the `:last
 include::example$r2dbc/PersonRepository.java[tags=spel]
 ----
 
-SpEL in query strings can be a powerful way to enhance queries.
-However, they can also accept a broad range of unwanted arguments.
-You should make sure to sanitize strings before passing them to the query to avoid unwanted changes to your query.
-
-Expression support is extensible through the Query SPI: `org.springframework.data.spel.spi.EvaluationContextExtension`.
+This Expression support is extensible through the Query SPI: `org.springframework.data.spel.spi.EvaluationContextExtension`.
 The Query SPI can contribute properties and functions and can customize the root object.
 Extensions are retrieved from the application context at the time of SpEL evaluation when the query is built.
 
 TIP: When using SpEL expressions in combination with plain parameters, use named parameter notation instead of native bind markers to ensure a proper binding order.
+
+The other way to use Expression is in the middle of query, independent of parameters.
+The result of evaluating the query will replace the expression in the query string.
+
+.Use a SpEL in a query
+[source,java,indent=0]
+----
+include::example$r2dbc/PersonRepository.java[tags=spel2]
+----
+
+It is evaluated once before the first execution and uses a `StandardEvaluationContext` with the two variables `tableName` and `qualifiedTableName` added.
+This use is most useful when table names are dynamic themselves, because they use SpEL expressions as well.
+
+SpEL in query strings can be a powerful way to enhance queries.
+However, they can also accept a broad range of unwanted arguments.
+You should make sure to sanitize strings before passing them to the query to avoid unwanted changes to your query.

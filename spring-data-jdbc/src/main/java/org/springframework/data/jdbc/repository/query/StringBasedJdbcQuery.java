@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,29 +17,38 @@ package org.springframework.data.jdbc.repository.query;
 
 import static org.springframework.data.jdbc.repository.query.JdbcQueryExecution.*;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.sql.SQLType;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
+import org.springframework.beans.BeanInstantiationException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.data.expression.ValueEvaluationContext;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.jdbc.core.convert.JdbcColumnTypes;
 import org.springframework.data.jdbc.core.convert.JdbcConverter;
 import org.springframework.data.jdbc.core.mapping.JdbcValue;
 import org.springframework.data.jdbc.support.JdbcUtil;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.repository.query.RelationalParameterAccessor;
-import org.springframework.data.relational.repository.query.RelationalParameters;
 import org.springframework.data.relational.repository.query.RelationalParametersParameterAccessor;
+import org.springframework.data.repository.query.CachingValueExpressionDelegate;
 import org.springframework.data.repository.query.Parameter;
 import org.springframework.data.repository.query.Parameters;
 import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextAccessor;
 import org.springframework.data.repository.query.ResultProcessor;
-import org.springframework.data.repository.query.SpelEvaluator;
-import org.springframework.data.repository.query.SpelQueryContext;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
+import org.springframework.data.repository.query.ValueExpressionQueryRewriter;
+import org.springframework.data.util.Lazy;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
@@ -63,15 +72,20 @@ import org.springframework.util.ObjectUtils;
  * @author Chirag Tailor
  * @author Christopher Klein
  * @author Mikhail Polivakha
+ * @author Marcin Grzejszczak
  * @since 2.0
  */
 public class StringBasedJdbcQuery extends AbstractJdbcQuery {
 
-	private static final String PARAMETER_NEEDS_TO_BE_NAMED = "For queries with named parameters you need to provide names for method parameters; Use @Param for query method parameters, or when on Java 8+ use the javac flag -parameters";
+	private static final String PARAMETER_NEEDS_TO_BE_NAMED = "For queries with named parameters you need to provide names for method parameters; Use @Param for query method parameters, or use the javac flag -parameters";
 	private final JdbcConverter converter;
 	private final RowMapperFactory rowMapperFactory;
-	private BeanFactory beanFactory;
-	private final QueryMethodEvaluationContextProvider evaluationContextProvider;
+	private final ValueExpressionQueryRewriter.ParsedQuery parsedQuery;
+	private final String query;
+
+	private final CachedRowMapperFactory cachedRowMapperFactory;
+	private final CachedResultSetExtractorFactory cachedResultSetExtractorFactory;
+	private final ValueExpressionDelegate delegate;
 
 	/**
 	 * Creates a new {@link StringBasedJdbcQuery} for the given {@link JdbcQueryMethod}, {@link RelationalMappingContext}
@@ -80,11 +94,14 @@ public class StringBasedJdbcQuery extends AbstractJdbcQuery {
 	 * @param queryMethod must not be {@literal null}.
 	 * @param operations must not be {@literal null}.
 	 * @param defaultRowMapper can be {@literal null} (only in case of a modifying query).
+	 * @deprecated since 3.4, use the constructors accepting {@link ValueExpressionDelegate} instead.
 	 */
+	@Deprecated(since = "3.4")
 	public StringBasedJdbcQuery(JdbcQueryMethod queryMethod, NamedParameterJdbcOperations operations,
 			@Nullable RowMapper<?> defaultRowMapper, JdbcConverter converter,
 			QueryMethodEvaluationContextProvider evaluationContextProvider) {
-		this(queryMethod, operations, result -> (RowMapper<Object>) defaultRowMapper, converter, evaluationContextProvider);
+		this(queryMethod.getRequiredQuery(), queryMethod, operations, result -> (RowMapper<Object>) defaultRowMapper,
+				converter, evaluationContextProvider);
 	}
 
 	/**
@@ -94,19 +111,57 @@ public class StringBasedJdbcQuery extends AbstractJdbcQuery {
 	 * @param queryMethod must not be {@literal null}.
 	 * @param operations must not be {@literal null}.
 	 * @param rowMapperFactory must not be {@literal null}.
+	 * @param converter must not be {@literal null}.
+	 * @param evaluationContextProvider must not be {@literal null}.
 	 * @since 2.3
+	 * @deprecated use alternative constructor
 	 */
+	@Deprecated(since = "3.4")
 	public StringBasedJdbcQuery(JdbcQueryMethod queryMethod, NamedParameterJdbcOperations operations,
 			RowMapperFactory rowMapperFactory, JdbcConverter converter,
 			QueryMethodEvaluationContextProvider evaluationContextProvider) {
+		this(queryMethod.getRequiredQuery(), queryMethod, operations, rowMapperFactory, converter,
+				evaluationContextProvider);
+	}
 
+	/**
+	 * Creates a new {@link StringBasedJdbcQuery} for the given {@link JdbcQueryMethod}, {@link RelationalMappingContext}
+	 * and {@link RowMapperFactory}.
+	 *
+	 * @param queryMethod must not be {@literal null}.
+	 * @param operations must not be {@literal null}.
+	 * @param rowMapperFactory must not be {@literal null}.
+	 * @param converter must not be {@literal null}.
+	 * @param delegate must not be {@literal null}.
+	 * @since 3.4
+	 */
+	public StringBasedJdbcQuery(JdbcQueryMethod queryMethod, NamedParameterJdbcOperations operations,
+			RowMapperFactory rowMapperFactory, JdbcConverter converter,
+			ValueExpressionDelegate delegate) {
+		this(queryMethod.getRequiredQuery(), queryMethod, operations, rowMapperFactory, converter, delegate);
+	}
+
+	/**
+	 * Creates a new {@link StringBasedJdbcQuery} for the given {@link JdbcQueryMethod}, {@link RelationalMappingContext}
+	 * and {@link RowMapperFactory}.
+	 *
+	 * @param query must not be {@literal null} or empty.
+	 * @param queryMethod must not be {@literal null}.
+	 * @param operations must not be {@literal null}.
+	 * @param rowMapperFactory must not be {@literal null}.
+	 * @param converter must not be {@literal null}.
+	 * @param delegate must not be {@literal null}.
+	 * @since 3.4
+	 */
+	public StringBasedJdbcQuery(String query, JdbcQueryMethod queryMethod, NamedParameterJdbcOperations operations,
+			RowMapperFactory rowMapperFactory, JdbcConverter converter,
+			ValueExpressionDelegate delegate) {
 		super(queryMethod, operations);
-
+		Assert.hasText(query, "Query must not be null or empty");
 		Assert.notNull(rowMapperFactory, "RowMapperFactory must not be null");
 
 		this.converter = converter;
 		this.rowMapperFactory = rowMapperFactory;
-		this.evaluationContextProvider = evaluationContextProvider;
 
 		if (queryMethod.isSliceQuery()) {
 			throw new UnsupportedOperationException(
@@ -117,6 +172,46 @@ public class StringBasedJdbcQuery extends AbstractJdbcQuery {
 			throw new UnsupportedOperationException(
 					"Page queries are not supported using string-based queries; Offending method: " + queryMethod);
 		}
+
+		if (queryMethod.getParameters().hasLimitParameter()) {
+			throw new UnsupportedOperationException(
+					"Queries with Limit are not supported using string-based queries; Offending method: " + queryMethod);
+		}
+
+		this.cachedRowMapperFactory = new CachedRowMapperFactory(
+				() -> rowMapperFactory.create(queryMethod.getResultProcessor().getReturnedType().getReturnedType()));
+		this.cachedResultSetExtractorFactory = new CachedResultSetExtractorFactory(
+				this.cachedRowMapperFactory::getRowMapper);
+
+		ValueExpressionQueryRewriter rewriter = ValueExpressionQueryRewriter.of(delegate,
+				(counter, expression) -> String.format("__$synthetic$__%d", counter + 1), String::concat);
+
+		this.query = query;
+		this.parsedQuery = rewriter.parse(this.query);
+		this.delegate = delegate;
+	}
+
+	/**
+	 * Creates a new {@link StringBasedJdbcQuery} for the given {@link JdbcQueryMethod}, {@link RelationalMappingContext}
+	 * and {@link RowMapperFactory}.
+	 *
+	 * @param query must not be {@literal null} or empty.
+	 * @param queryMethod must not be {@literal null}.
+	 * @param operations must not be {@literal null}.
+	 * @param rowMapperFactory must not be {@literal null}.
+	 * @param converter must not be {@literal null}.
+	 * @param evaluationContextProvider must not be {@literal null}.
+	 * @since 3.4
+	 * @deprecated since 3.4, use the constructors accepting {@link ValueExpressionDelegate} instead.
+	 */
+	@Deprecated(since = "3.4")
+	public StringBasedJdbcQuery(String query, JdbcQueryMethod queryMethod, NamedParameterJdbcOperations operations,
+			RowMapperFactory rowMapperFactory, JdbcConverter converter,
+			QueryMethodEvaluationContextProvider evaluationContextProvider) {
+		this(query, queryMethod, operations, rowMapperFactory, converter, new CachingValueExpressionDelegate(
+				new QueryMethodValueEvaluationContextAccessor(new StandardEnvironment(), rootObject -> evaluationContextProvider
+						.getEvaluationContext(queryMethod.getParameters(), new Object[] { rootObject })),
+				ValueExpressionParser.create()));
 	}
 
 	@Override
@@ -124,181 +219,313 @@ public class StringBasedJdbcQuery extends AbstractJdbcQuery {
 
 		RelationalParameterAccessor accessor = new RelationalParametersParameterAccessor(getQueryMethod(), objects);
 		ResultProcessor processor = getQueryMethod().getResultProcessor().withDynamicProjection(accessor);
-		ResultProcessingConverter converter = new ResultProcessingConverter(processor, this.converter.getMappingContext(),
-				this.converter.getEntityInstantiators());
 
-		JdbcQueryExecution<?> queryExecution = createJdbcQueryExecution(accessor, processor, converter);
-
+		JdbcQueryExecution<?> queryExecution = createJdbcQueryExecution(accessor, processor);
 		MapSqlParameterSource parameterMap = this.bindParameters(accessor);
 
-		String query = determineQuery();
+		return queryExecution.execute(evaluateExpressions(objects, accessor.getBindableParameters(), parameterMap),
+				parameterMap);
+	}
 
-		if (ObjectUtils.isEmpty(query)) {
-			throw new IllegalStateException(String.format("No query specified on %s", getQueryMethod().getName()));
+	private String evaluateExpressions(Object[] objects, Parameters<?, ?> bindableParameters,
+			MapSqlParameterSource parameterMap) {
+
+		if (parsedQuery.hasParameterBindings()) {
+
+			ValueEvaluationContext evaluationContext = delegate.createValueContextProvider(bindableParameters)
+					.getEvaluationContext(objects);
+
+			parsedQuery.getParameterMap().forEach((paramName, valueExpression) -> {
+				parameterMap.addValue(paramName, valueExpression.evaluate(evaluationContext));
+			});
+
+			return parsedQuery.getQueryString();
 		}
 
-		return queryExecution.execute(processSpelExpressions(objects, parameterMap, query), parameterMap);
+		return this.query;
 	}
 
 	private JdbcQueryExecution<?> createJdbcQueryExecution(RelationalParameterAccessor accessor,
-			ResultProcessor processor, ResultProcessingConverter converter) {
+			ResultProcessor processor) {
 
 		if (getQueryMethod().isModifyingQuery()) {
 			return createModifyingQueryExecutor();
-		} else {
-
-			RowMapper<Object> rowMapper = determineRowMapper(rowMapperFactory.create(resolveTypeToRead(processor)), converter,
-					accessor.findDynamicProjection() != null);
-
-			return createReadingQueryExecution(determineResultSetExtractor(rowMapper), rowMapper);
 		}
-	}
 
-	private String processSpelExpressions(Object[] objects, MapSqlParameterSource parameterMap, String query) {
+		Supplier<RowMapper<?>> rowMapper = () -> determineRowMapper(processor, accessor.findDynamicProjection() != null);
+		ResultSetExtractor<Object> resultSetExtractor = determineResultSetExtractor(rowMapper);
 
-		SpelQueryContext.EvaluatingSpelQueryContext queryContext = SpelQueryContext
-				.of((counter, expression) -> String.format("__$synthetic$__%d", counter + 1), String::concat)
-				.withEvaluationContextProvider(evaluationContextProvider);
-
-		SpelEvaluator spelEvaluator = queryContext.parse(query, getQueryMethod().getParameters());
-
-		spelEvaluator.evaluate(objects).forEach(parameterMap::addValue);
-
-		return spelEvaluator.getQueryString();
+		return createReadingQueryExecution(resultSetExtractor, rowMapper);
 	}
 
 	private MapSqlParameterSource bindParameters(RelationalParameterAccessor accessor) {
 
-		MapSqlParameterSource parameters = new MapSqlParameterSource();
-
 		Parameters<?, ?> bindableParameters = accessor.getBindableParameters();
+		MapSqlParameterSource parameters = new MapSqlParameterSource(
+				new LinkedHashMap<>(bindableParameters.getNumberOfParameters(), 1.0f));
 
 		for (Parameter bindableParameter : bindableParameters) {
-			convertAndAddParameter(parameters, bindableParameter, accessor.getBindableValue(bindableParameter.getIndex()));
+
+			Object value = accessor.getBindableValue(bindableParameter.getIndex());
+			String parameterName = bindableParameter.getName()
+					.orElseThrow(() -> new IllegalStateException(PARAMETER_NEEDS_TO_BE_NAMED));
+			JdbcParameters.JdbcParameter parameter = getQueryMethod().getParameters()
+					.getParameter(bindableParameter.getIndex());
+
+			JdbcValue jdbcValue = writeValue(value, parameter.getTypeInformation(), parameter);
+			SQLType jdbcType = jdbcValue.getJdbcType();
+
+			if (jdbcType == null) {
+				parameters.addValue(parameterName, jdbcValue.getValue());
+			} else {
+				parameters.addValue(parameterName, jdbcValue.getValue(), jdbcType.getVendorTypeNumber());
+			}
 		}
 
 		return parameters;
 	}
 
-	private void convertAndAddParameter(MapSqlParameterSource parameters, Parameter p, Object value) {
+	private JdbcValue writeValue(@Nullable Object value, TypeInformation<?> typeInformation,
+			JdbcParameters.JdbcParameter parameter) {
 
-		String parameterName = p.getName().orElseThrow(() -> new IllegalStateException(PARAMETER_NEEDS_TO_BE_NAMED));
+		if (value == null) {
+			return JdbcValue.of(value, parameter.getSqlType());
+		}
 
-		RelationalParameters.RelationalParameter parameter = getQueryMethod().getParameters().getParameter(p.getIndex());
-		TypeInformation<?> typeInformation = parameter.getTypeInformation();
+		if (typeInformation.isCollectionLike() && value instanceof Collection<?> collection) {
 
-		JdbcValue jdbcValue;
-		if (typeInformation.isCollectionLike() && value instanceof Collection<?>) {
+			TypeInformation<?> actualType = typeInformation.getActualType();
 
-			List<Object> mapped = new ArrayList<>();
-			SQLType jdbcType = null;
+			// allow tuple-binding for collection of byte arrays to be used as BINARY,
+			// we do not want to convert to column arrays.
+			if (actualType != null && actualType.getType().isArray() && !actualType.getType().equals(byte[].class)) {
 
-			TypeInformation<?> actualType = typeInformation.getRequiredActualType();
-			for (Object o : (Iterable<?>) value) {
-				JdbcValue elementJdbcValue = converter.writeJdbcValue(o, actualType.getType(),
-						JdbcUtil.targetSqlTypeFor(JdbcColumnTypes.INSTANCE.resolvePrimitiveType(actualType.getType())));
-				if (jdbcType == null) {
-					jdbcType = elementJdbcValue.getJdbcType();
-				}
-
-				mapped.add(elementJdbcValue.getValue());
+				TypeInformation<?> nestedElementType = actualType.getRequiredActualType();
+				return writeCollection(collection, parameter.getActualSqlType(),
+						array -> writeArrayValue(parameter, array, nestedElementType));
 			}
 
-			jdbcValue = JdbcValue.of(mapped, jdbcType);
-		} else {
-			jdbcValue = converter.writeJdbcValue(value, typeInformation.getType(),
-					JdbcUtil.targetSqlTypeFor(JdbcColumnTypes.INSTANCE.resolvePrimitiveType(typeInformation.getType())));
+			// parameter expansion
+			return writeCollection(collection, parameter.getActualSqlType(),
+					it -> converter.writeJdbcValue(it, typeInformation.getRequiredActualType(), parameter.getActualSqlType()));
 		}
 
-		SQLType jdbcType = jdbcValue.getJdbcType();
-		if (jdbcType == null) {
-
-			parameters.addValue(parameterName, jdbcValue.getValue());
-		} else {
-			parameters.addValue(parameterName, jdbcValue.getValue(), jdbcType.getVendorTypeNumber());
-		}
+		SQLType sqlType = parameter.getSqlType();
+		return converter.writeJdbcValue(value, typeInformation, sqlType);
 	}
 
-	private String determineQuery() {
+	private JdbcValue writeCollection(Collection<?> value, SQLType defaultType, Function<Object, Object> mapper) {
 
-		String query = getQueryMethod().getDeclaredQuery();
-
-		if (ObjectUtils.isEmpty(query)) {
-			throw new IllegalStateException(String.format("No query specified on %s", getQueryMethod().getName()));
+		if (value.isEmpty()) {
+			return JdbcValue.of(value, defaultType);
 		}
 
-		return query;
+		JdbcValue jdbcValue;
+		List<Object> mapped = new ArrayList<>(value.size());
+		SQLType jdbcType = null;
+
+		for (Object o : value) {
+
+			Object mappedValue = mapper.apply(o);
+
+			if (mappedValue instanceof JdbcValue jv) {
+				if (jdbcType == null) {
+					jdbcType = jv.getJdbcType();
+				}
+				mappedValue = jv.getValue();
+			}
+
+			mapped.add(mappedValue);
+		}
+
+		jdbcValue = JdbcValue.of(mapped, jdbcType == null ? defaultType : jdbcType);
+
+		return jdbcValue;
+	}
+
+	private JdbcValue writeArrayValue(JdbcParameters.JdbcParameter parameter, Object array,
+			TypeInformation<?> nestedElementType) {
+
+		int length = Array.getLength(array);
+		Object[] mappedArray = new Object[length];
+		SQLType sqlType = null;
+
+		for (int i = 0; i < length; i++) {
+
+			Object element = Array.get(array, i);
+			JdbcValue converted = converter.writeJdbcValue(element, nestedElementType, parameter.getActualSqlType());
+
+			if (sqlType == null && converted.getJdbcType() != null) {
+				sqlType = converted.getJdbcType();
+			}
+			mappedArray[i] = converted.getValue();
+		}
+
+		if (sqlType == null) {
+			sqlType = JdbcUtil.targetSqlTypeFor(JdbcColumnTypes.INSTANCE.resolvePrimitiveType(nestedElementType.getType()));
+		}
+
+		return JdbcValue.of(mappedArray, sqlType);
+	}
+
+	RowMapper<Object> determineRowMapper(ResultProcessor resultProcessor, boolean hasDynamicProjection) {
+
+		if (cachedRowMapperFactory.isConfiguredRowMapper()) {
+			return cachedRowMapperFactory.getRowMapper();
+		}
+
+		if (hasDynamicProjection) {
+
+			RowMapper<Object> rowMapperToUse = rowMapperFactory.create(resultProcessor.getReturnedType().getDomainType());
+
+			ResultProcessingConverter converter = new ResultProcessingConverter(resultProcessor,
+					this.converter.getMappingContext(), this.converter.getEntityInstantiators());
+			return new ConvertingRowMapper<>(rowMapperToUse, converter);
+		}
+
+		return cachedRowMapperFactory.getRowMapper();
 	}
 
 	@Nullable
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	ResultSetExtractor<Object> determineResultSetExtractor(@Nullable RowMapper<Object> rowMapper) {
+	ResultSetExtractor<Object> determineResultSetExtractor(Supplier<RowMapper<?>> rowMapper) {
 
-		String resultSetExtractorRef = getQueryMethod().getResultSetExtractorRef();
+		if (cachedResultSetExtractorFactory.isConfiguredResultSetExtractor()) {
 
-		if (!ObjectUtils.isEmpty(resultSetExtractorRef)) {
+			if (cachedResultSetExtractorFactory.requiresRowMapper() && !cachedRowMapperFactory.isConfiguredRowMapper()) {
+				return cachedResultSetExtractorFactory.getResultSetExtractor(rowMapper);
+			}
 
-			Assert.notNull(beanFactory, "When a ResultSetExtractorRef is specified the BeanFactory must not be null");
-
-			return (ResultSetExtractor<Object>) beanFactory.getBean(resultSetExtractorRef);
+			// configured ResultSetExtractor defaults to configured RowMapper in case both are configured
+			return cachedResultSetExtractorFactory.getResultSetExtractor();
 		}
 
-		Class<? extends ResultSetExtractor> resultSetExtractorClass = getQueryMethod().getResultSetExtractorClass();
-
-		if (isUnconfigured(resultSetExtractorClass, ResultSetExtractor.class)) {
-			return null;
-		}
-
-		Constructor<? extends ResultSetExtractor> constructor = ClassUtils
-				.getConstructorIfAvailable(resultSetExtractorClass, RowMapper.class);
-
-		if (constructor != null) {
-			return BeanUtils.instantiateClass(constructor, rowMapper);
-		}
-
-		return BeanUtils.instantiateClass(resultSetExtractorClass);
-	}
-
-	@Nullable
-	RowMapper<Object> determineRowMapper(@Nullable RowMapper<?> defaultMapper,
-			Converter<Object, Object> resultProcessingConverter, boolean hasDynamicProjection) {
-
-		RowMapper<Object> rowMapperToUse = determineRowMapper(defaultMapper);
-
-		if ((hasDynamicProjection || rowMapperToUse == defaultMapper) && rowMapperToUse != null) {
-			return new ConvertingRowMapper<>(rowMapperToUse, resultProcessingConverter);
-		}
-
-		return rowMapperToUse;
-	}
-
-	@SuppressWarnings("unchecked")
-	@Nullable
-	RowMapper<Object> determineRowMapper(@Nullable RowMapper<?> defaultMapper) {
-
-		String rowMapperRef = getQueryMethod().getRowMapperRef();
-
-		if (!ObjectUtils.isEmpty(rowMapperRef)) {
-
-			Assert.notNull(beanFactory, "When a RowMapperRef is specified the BeanFactory must not be null");
-
-			return (RowMapper<Object>) beanFactory.getBean(rowMapperRef);
-		}
-
-		Class<?> rowMapperClass = getQueryMethod().getRowMapperClass();
-
-		if (isUnconfigured(rowMapperClass, RowMapper.class)) {
-			return (RowMapper<Object>) defaultMapper;
-		}
-
-		return (RowMapper<Object>) BeanUtils.instantiateClass(rowMapperClass);
+		return null;
 	}
 
 	private static boolean isUnconfigured(@Nullable Class<?> configuredClass, Class<?> defaultClass) {
 		return configuredClass == null || configuredClass == defaultClass;
 	}
 
-	public void setBeanFactory(BeanFactory beanFactory) {
-		this.beanFactory = beanFactory;
+	@Deprecated(since = "3.4")
+	public void setBeanFactory(BeanFactory beanFactory) {}
+
+	class CachedRowMapperFactory {
+
+		private final Lazy<RowMapper<Object>> cachedRowMapper;
+		private final boolean configuredRowMapper;
+		private final @Nullable Constructor<?> constructor;
+
+		@SuppressWarnings("unchecked")
+		public CachedRowMapperFactory(Supplier<RowMapper<Object>> defaultMapper) {
+
+			String rowMapperRef = getQueryMethod().getRowMapperRef();
+			Class<?> rowMapperClass = getQueryMethod().getRowMapperClass();
+
+			if (!ObjectUtils.isEmpty(rowMapperRef) && !isUnconfigured(rowMapperClass, RowMapper.class)) {
+				throw new IllegalArgumentException(
+						"Invalid RowMapper configuration. Configure either one but not both via @Query(rowMapperRef = …, rowMapperClass = …) for query method "
+								+ getQueryMethod());
+			}
+
+			this.configuredRowMapper = !ObjectUtils.isEmpty(rowMapperRef) || !isUnconfigured(rowMapperClass, RowMapper.class);
+			this.constructor = rowMapperClass != null ? findPrimaryConstructor(rowMapperClass) : null;
+			this.cachedRowMapper = Lazy.of(() -> {
+
+				if (!ObjectUtils.isEmpty(rowMapperRef)) {
+					return rowMapperFactory.getRowMapper(rowMapperRef);
+				}
+
+				if (isUnconfigured(rowMapperClass, RowMapper.class)) {
+					return defaultMapper.get();
+				}
+
+				return (RowMapper<Object>) BeanUtils.instantiateClass(constructor);
+			});
+		}
+
+		public boolean isConfiguredRowMapper() {
+			return configuredRowMapper;
+		}
+
+		public RowMapper<Object> getRowMapper() {
+			return cachedRowMapper.get();
+		}
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	class CachedResultSetExtractorFactory {
+
+		private final Lazy<ResultSetExtractor<Object>> cachedResultSetExtractor;
+		private final boolean configuredResultSetExtractor;
+		private final @Nullable Constructor<? extends ResultSetExtractor> rowMapperConstructor;
+		private final @Nullable Constructor<? extends ResultSetExtractor> constructor;
+		private final Function<Supplier<RowMapper<?>>, ResultSetExtractor<Object>> resultSetExtractorFactory;
+
+		public CachedResultSetExtractorFactory(Supplier<RowMapper<?>> resultSetExtractor) {
+
+			String resultSetExtractorRef = getQueryMethod().getResultSetExtractorRef();
+			Class<? extends ResultSetExtractor> resultSetExtractorClass = getQueryMethod().getResultSetExtractorClass();
+
+			if (!ObjectUtils.isEmpty(resultSetExtractorRef)
+					&& !isUnconfigured(resultSetExtractorClass, ResultSetExtractor.class)) {
+				throw new IllegalArgumentException(
+						"Invalid ResultSetExtractor configuration. Configure either one but not both via @Query(resultSetExtractorRef = …, resultSetExtractorClass = …) for query method "
+								+ getQueryMethod());
+			}
+
+			this.configuredResultSetExtractor = !ObjectUtils.isEmpty(resultSetExtractorRef)
+					|| !isUnconfigured(resultSetExtractorClass, ResultSetExtractor.class);
+
+			this.rowMapperConstructor = resultSetExtractorClass != null
+					? ClassUtils.getConstructorIfAvailable(resultSetExtractorClass, RowMapper.class)
+					: null;
+			this.constructor = resultSetExtractorClass != null ? findPrimaryConstructor(resultSetExtractorClass) : null;
+			this.resultSetExtractorFactory = rowMapper -> {
+
+				if (!ObjectUtils.isEmpty(resultSetExtractorRef)) {
+					return rowMapperFactory.getResultSetExtractor(resultSetExtractorRef);
+				}
+
+				if (isUnconfigured(resultSetExtractorClass, ResultSetExtractor.class)) {
+					throw new UnsupportedOperationException("This should not happen");
+				}
+
+				if (rowMapperConstructor != null) {
+					return BeanUtils.instantiateClass(rowMapperConstructor, rowMapper.get());
+				}
+
+				return BeanUtils.instantiateClass(constructor);
+			};
+
+			this.cachedResultSetExtractor = Lazy.of(() -> resultSetExtractorFactory.apply(resultSetExtractor));
+		}
+
+		public boolean isConfiguredResultSetExtractor() {
+			return configuredResultSetExtractor;
+		}
+
+		public ResultSetExtractor<Object> getResultSetExtractor() {
+			return cachedResultSetExtractor.get();
+		}
+
+		public ResultSetExtractor<Object> getResultSetExtractor(Supplier<RowMapper<?>> rowMapperSupplier) {
+			return resultSetExtractorFactory.apply(rowMapperSupplier);
+		}
+
+		public boolean requiresRowMapper() {
+			return rowMapperConstructor != null;
+		}
+	}
+
+	@Nullable
+	static <T> Constructor<T> findPrimaryConstructor(Class<T> clazz) {
+		try {
+			return clazz.getDeclaredConstructor();
+		} catch (NoSuchMethodException ex) {
+			return BeanUtils.findPrimaryConstructor(clazz);
+
+		} catch (LinkageError err) {
+			throw new BeanInstantiationException(clazz, "Unresolvable class definition", err);
+		}
 	}
 }

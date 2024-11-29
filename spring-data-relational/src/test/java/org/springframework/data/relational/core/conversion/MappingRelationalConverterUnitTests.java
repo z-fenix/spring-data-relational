@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,26 +24,36 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.convert.TypeDescriptor;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.convert.converter.GenericConverter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.PersistenceCreator;
 import org.springframework.data.convert.ConverterBuilder;
 import org.springframework.data.convert.ConverterBuilder.ConverterAware;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.convert.CustomConversions.StoreConversions;
+import org.springframework.data.convert.ReadingConverter;
+import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
 import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
 import org.springframework.data.relational.domain.RowDocument;
+import org.springframework.data.util.TypeInformation;
 
 /**
  * Unit tests for {@link MappingRelationalConverter}.
  *
  * @author Mark Paluch
+ * @author Lukáš Křečan
+ * @author Jens Schauder
  */
 class MappingRelationalConverterUnitTests {
 
@@ -81,6 +91,20 @@ class MappingRelationalConverterUnitTests {
 		WithExpression result = converter.read(WithExpression.class, document);
 
 		assertThat(result.name).isEqualTo("bar");
+	}
+
+	@Test
+	// GH-1689
+	void shouldApplySimpleTypeConverterSimpleType() {
+
+		converter = new MappingRelationalConverter(converter.getMappingContext(),
+				new CustomConversions(StoreConversions.NONE, List.of(MyEnumConverter.INSTANCE)));
+
+		RowDocument document = new RowDocument().append("my_enum", "one");
+
+		WithMyEnum result = converter.read(WithMyEnum.class, document);
+
+		assertThat(result.myEnum).isEqualTo(MyEnum.ONE);
 	}
 
 	@Test // GH-1586
@@ -190,6 +214,26 @@ class MappingRelationalConverterUnitTests {
 		ProjectionWithNestedEntity person = converter.project(projection, source);
 
 		assertThat(person.getAddresses()).extracting(Address::getStreet).hasSize(1).containsOnly("hwy");
+	}
+
+	@Test // GH-1842
+	void shouldApplyGenericTypeConverter() {
+
+		converter = new MappingRelationalConverter(converter.getMappingContext(),
+				new CustomConversions(StoreConversions.NONE, List.of(GenericTypeConverter.INSTANCE)));
+
+		UUID uuid = UUID.randomUUID();
+		GenericClass<UUID> wrappedUuid = new GenericClass<>(uuid);
+		GenericClass<String> wrappedString = new GenericClass<>("test");
+
+		SoftAssertions.assertSoftly(softly -> {
+
+			softly.assertThat(converter.writeValue(uuid, TypeInformation.of(GenericClass.class))).isEqualTo(wrappedUuid);
+			softly.assertThat(converter.writeValue(wrappedUuid, TypeInformation.of(UUID.class))).isEqualTo(uuid);
+
+			softly.assertThat(converter.writeValue("test", TypeInformation.of(GenericClass.class))).isEqualTo(wrappedString);
+			softly.assertThat(converter.writeValue(wrappedString, TypeInformation.of(String.class))).isEqualTo("test");
+		});
 	}
 
 	static class SimpleType {
@@ -326,6 +370,50 @@ class MappingRelationalConverterUnitTests {
 	interface AddressProjection {
 
 		String getStreet();
+	}
+
+	record WithMyEnum(MyEnum myEnum) {
+	}
+
+	enum MyEnum {
+		ONE, TWO,
+	}
+
+	@ReadingConverter
+	enum MyEnumConverter implements Converter<String, MyEnum> {
+
+		INSTANCE;
+
+		@Override
+		public MyEnum convert(String source) {
+			return MyEnum.valueOf(source.toUpperCase());
+		}
+
+	}
+
+	@WritingConverter
+	enum GenericTypeConverter implements GenericConverter {
+
+		INSTANCE;
+
+		@Override
+		public Set<ConvertiblePair> getConvertibleTypes() {
+			return Set.of(new ConvertiblePair(String.class, GenericClass.class),
+					new ConvertiblePair(UUID.class, GenericClass.class), new ConvertiblePair(GenericClass.class, String.class),
+					new ConvertiblePair(GenericClass.class, UUID.class));
+		}
+
+		@Override
+		public Object convert(Object source, TypeDescriptor sourceType, TypeDescriptor targetType) {
+			if (targetType.getType() == GenericClass.class)
+				return new GenericClass<>(source);
+
+			return ((GenericClass<?>) source).value();
+		}
+
+	}
+
+	public record GenericClass<T>(T value) {
 	}
 
 }

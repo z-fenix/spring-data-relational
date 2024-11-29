@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,11 @@ public interface PersonRepository extends ReactiveCrudRepository<Person, String>
 
 	// tag::spel[]
 	@Query("SELECT * FROM person WHERE lastname = :#{[0]}")
-	Flux<Person> findByQueryWithExpression(String lastname);
+	Flux<Person> findByQueryWithParameterExpression(String lastname);
 	// end::spel[]
+
+	// tag::spel2[]
+	@Query("SELECT * FROM #{tableName} WHERE lastname = :lastname")
+	Flux<Person> findByQueryWithExpression(String lastname);
+	// end::spel2[]
 }

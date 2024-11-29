@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,6 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 	private final boolean hasExplicitColumnName;
 	private final @Nullable Expression columnNameExpression;
 	private final Lazy<Optional<SqlIdentifier>> collectionIdColumnName;
-	private final @Nullable Expression collectionIdColumnNameExpression;
 	private final Lazy<SqlIdentifier> collectionKeyColumnName;
 	private final @Nullable Expression collectionKeyColumnNameExpression;
 	private final boolean isEmbedded;
@@ -62,22 +61,6 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 	private final NamingStrategy namingStrategy;
 	private boolean forceQuote = true;
 	private ExpressionEvaluator expressionEvaluator = new ExpressionEvaluator(EvaluationContextProvider.DEFAULT);
-
-	/**
-	 * Creates a new {@link BasicRelationalPersistentProperty}.
-	 *
-	 * @param property must not be {@literal null}.
-	 * @param owner must not be {@literal null}.
-	 * @param simpleTypeHolder must not be {@literal null}.
-	 * @param context must not be {@literal null}
-	 * @since 2.0, use
-	 *        {@link #BasicRelationalPersistentProperty(Property, PersistentEntity, SimpleTypeHolder, NamingStrategy)}.
-	 */
-	@Deprecated
-	public BasicRelationalPersistentProperty(Property property, PersistentEntity<?, RelationalPersistentProperty> owner,
-			SimpleTypeHolder simpleTypeHolder, RelationalMappingContext context) {
-		this(property, owner, simpleTypeHolder, context.getNamingStrategy());
-	}
 
 	/**
 	 * Creates a new {@link BasicRelationalPersistentProperty}.
@@ -114,8 +97,6 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 				collectionIdColumnName = Lazy.of(() -> Optional.of(createSqlIdentifier(mappedCollection.idColumn())));
 			}
 
-			this.collectionIdColumnNameExpression = detectExpression(mappedCollection.idColumn());
-
 			collectionKeyColumnName = Lazy.of(
 					() -> StringUtils.hasText(mappedCollection.keyColumn()) ? createSqlIdentifier(mappedCollection.keyColumn())
 							: createDerivedSqlIdentifier(namingStrategy.getKeyColumn(this)));
@@ -123,7 +104,6 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 			this.collectionKeyColumnNameExpression = detectExpression(mappedCollection.keyColumn());
 		} else {
 
-			this.collectionIdColumnNameExpression = null;
 			this.collectionKeyColumnNameExpression = null;
 		}
 
@@ -220,18 +200,6 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 	@Override
 	public RelationalPersistentEntity<?> getOwner() {
 		return (RelationalPersistentEntity<?>) super.getOwner();
-	}
-
-	@Override
-	public SqlIdentifier getReverseColumnName(PersistentPropertyPathExtension path) {
-
-		if (collectionIdColumnNameExpression == null) {
-
-			return collectionIdColumnName.get()
-					.orElseGet(() -> createDerivedSqlIdentifier(this.namingStrategy.getReverseColumnName(path)));
-		}
-
-		return createSqlIdentifier(expressionEvaluator.evaluate(collectionIdColumnNameExpression));
 	}
 
 	@Override

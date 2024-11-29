@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.data.domain.Sort.Order.*;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -52,6 +54,7 @@ import org.testcontainers.shaded.com.fasterxml.jackson.databind.node.TextNode;
  * @author Mark Paluch
  * @author Mingyuan Wu
  * @author Jens Schauder
+ * @author Yan Qiang
  */
 class QueryMapperUnitTests {
 
@@ -59,9 +62,12 @@ class QueryMapperUnitTests {
 	private QueryMapper mapper = createMapper(PostgresDialect.INSTANCE);
 
 	QueryMapper createMapper(R2dbcDialect dialect) {
+		return createMapper(dialect, JsonNodeToStringConverter.INSTANCE, StringToJsonNodeConverter.INSTANCE);
+	}
 
-		R2dbcCustomConversions conversions = R2dbcCustomConversions.of(dialect, JsonNodeToStringConverter.INSTANCE,
-				StringToJsonNodeConverter.INSTANCE);
+	QueryMapper createMapper(R2dbcDialect dialect, Converter<?, ?>... converters) {
+
+		R2dbcCustomConversions conversions = R2dbcCustomConversions.of(dialect, Arrays.asList(converters));
 
 		R2dbcMappingContext context = new R2dbcMappingContext();
 		context.setSimpleTypeHolder(conversions.getSimpleTypeHolder());
@@ -358,6 +364,19 @@ class QueryMapperUnitTests {
 		assertThat(bindings.getCondition()).hasToString("person.name NOT IN (?[$1], ?[$2], ?[$3])");
 	}
 
+	@Test
+	void shouldMapIsNotInWithCollectionToStringConverter() {
+
+		mapper = createMapper(PostgresDialect.INSTANCE, JsonNodeToStringConverter.INSTANCE,
+				StringToJsonNodeConverter.INSTANCE, CollectionToStringConverter.INSTANCE);
+
+		Criteria criteria = Criteria.where("name").notIn("a", "b", "c");
+
+		BoundCondition bindings = map(criteria);
+
+		assertThat(bindings.getCondition()).hasToString("person.name NOT IN (?[$1], ?[$2], ?[$3])");
+	}
+
 	@Test // gh-64
 	void shouldMapIsGt() {
 
@@ -408,26 +427,6 @@ class QueryMapperUnitTests {
 		assertThat(bindings.getCondition()).hasToString("person.name LIKE ?[$1]");
 	}
 
-	@Test // gh-64
-	void shouldMapSort() {
-
-		Sort sort = Sort.by(desc("alternative"));
-
-		Sort mapped = mapper.getMappedObject(sort, mapper.getMappingContext().getRequiredPersistentEntity(Person.class));
-
-		assertThat(mapped.getOrderFor("another_name")).isEqualTo(desc("another_name"));
-		assertThat(mapped.getOrderFor("alternative")).isNull();
-	}
-
-	@Test // gh-369
-	void mapSortForPropertyPathInPrimitiveShouldFallBackToColumnName() {
-
-		Sort sort = Sort.by(desc("alternative_name"));
-
-		Sort mapped = mapper.getMappedObject(sort, mapper.getMappingContext().getRequiredPersistentEntity(Person.class));
-		assertThat(mapped.getOrderFor("alternative_name")).isEqualTo(desc("alternative_name"));
-	}
-
 	@Test // GH-1507
 	public void shouldMapSortWithUnknownField() {
 
@@ -467,14 +466,14 @@ class QueryMapperUnitTests {
 				.containsExactly("tbl.x(._)x DESC");
 	}
 
-
 	@Test // GH-1507
 	public void shouldNotMapSortWithIllegalExpression() {
 
 		Sort sort = Sort.by(desc("unknown Field"));
 
 		assertThatThrownBy(() -> mapper.getMappedSort(Table.create("tbl"), sort,
-				mapper.getMappingContext().getRequiredPersistentEntity(Person.class))).isInstanceOf(IllegalArgumentException.class);
+				mapper.getMappingContext().getRequiredPersistentEntity(Person.class)))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test // gh-369
@@ -571,6 +570,15 @@ class QueryMapperUnitTests {
 		@Override
 		public String convert(JsonNode source) {
 			return source.asText();
+		}
+	}
+
+	enum CollectionToStringConverter implements Converter<Collection<?>, String> {
+		INSTANCE;
+
+		@Override
+		public String convert(Collection<?> source) {
+			return source.toString();
 		}
 	}
 

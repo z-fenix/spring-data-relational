@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 the original author or authors.
+ * Copyright 2020-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ import org.springframework.data.mapping.PropertyPath;
 import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.data.mapping.context.InvalidPersistentPropertyPath;
 import org.springframework.data.mapping.context.MappingContext;
-import org.springframework.data.relational.core.dialect.Dialect;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.query.CriteriaDefinition;
@@ -53,6 +52,7 @@ import org.springframework.util.ClassUtils;
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Yan Qiang
  * @since 3.0
  */
 public class QueryMapper {
@@ -63,26 +63,9 @@ public class QueryMapper {
 	/**
 	 * Creates a new {@link QueryMapper} with the given {@link JdbcConverter}.
 	 *
-	 * @param dialect must not be {@literal null}.
-	 * @param converter must not be {@literal null}.
-	 * @deprecated use {@link QueryMapper(JdbcConverter)} instead.
-	 */
-	@Deprecated(since="3.2")
-	public QueryMapper(Dialect dialect, JdbcConverter converter) {
-
-		Assert.notNull(dialect, "Dialect must not be null");
-		Assert.notNull(converter, "JdbcConverter must not be null");
-
-		this.converter = converter;
-		this.mappingContext = converter.getMappingContext();
-	}
-
-	/**
-	 * Creates a new {@link QueryMapper} with the given {@link JdbcConverter}.
-	 *
 	 * @param converter must not be {@literal null}.
 	 */
-	public QueryMapper( JdbcConverter converter) {
+	public QueryMapper(JdbcConverter converter) {
 
 		Assert.notNull(converter, "JdbcConverter must not be null");
 
@@ -106,8 +89,7 @@ public class QueryMapper {
 			SqlSort.validate(order);
 
 			OrderByField simpleOrderByField = createSimpleOrderByField(table, entity, order);
-			OrderByField orderBy = simpleOrderByField
-					.withNullHandling(order.getNullHandling());
+			OrderByField orderBy = simpleOrderByField.withNullHandling(order.getNullHandling());
 			mappedOrder.add(order.isAscending() ? orderBy.asc() : orderBy.desc());
 		}
 
@@ -147,7 +129,7 @@ public class QueryMapper {
 			Assert.state(table != null, String.format("The column %s must have a table set", column));
 
 			Column columnFromTable = table.column(field.getMappedColumnName());
-			return column instanceof Aliased ? columnFromTable.as(((Aliased) column).getAlias()) : columnFromTable;
+			return column instanceof Aliased aliased ? columnFromTable.as(aliased.getAlias()) : columnFromTable;
 		}
 
 		if (expression instanceof SimpleFunction function) {
@@ -161,7 +143,7 @@ public class QueryMapper {
 
 			SimpleFunction mappedFunction = SimpleFunction.create(function.getFunctionName(), mappedArguments);
 
-			return function instanceof Aliased ? mappedFunction.as(((Aliased) function).getAlias()) : mappedFunction;
+			return function instanceof Aliased aliased ? mappedFunction.as(aliased.getAlias()) : mappedFunction;
 		}
 
 		throw new IllegalArgumentException(String.format("Cannot map %s", expression));
@@ -301,7 +283,7 @@ public class QueryMapper {
 		SQLType sqlType;
 		Comparator comparator = criteria.getComparator();
 
-		if (criteria.getValue()instanceof JdbcValue settableValue) {
+		if (criteria.getValue() instanceof JdbcValue settableValue) {
 
 			mappedValue = convertValue(comparator, settableValue.getValue(), propertyField.getTypeHint());
 			sqlType = getTypeHint(mappedValue, actualType.getType(), settableValue);
@@ -314,7 +296,7 @@ public class QueryMapper {
 				&& metadataBackedField.property != null //
 				&& (criteria.getValue() == null || !criteria.getValue().getClass().isArray())) {
 
-			RelationalPersistentProperty property = ((MetadataBackedField) propertyField).property;
+			RelationalPersistentProperty property = metadataBackedField.property;
 			JdbcValue jdbcValue = convertToJdbcValue(property, criteria.getValue());
 			mappedValue = jdbcValue.getValue();
 			sqlType = jdbcValue.getJdbcType() != null ? jdbcValue.getJdbcType() : propertyField.getSqlType();
@@ -416,7 +398,6 @@ public class QueryMapper {
 
 		PersistentPropertyAccessor<Object> embeddedAccessor = persistentEntity.getPropertyAccessor(criteria.getValue());
 
-		String prefix = embeddedProperty.getEmbeddedPrefix();
 		Condition condition = null;
 		for (RelationalPersistentProperty nestedProperty : persistentEntity) {
 
@@ -441,7 +422,8 @@ public class QueryMapper {
 	@Nullable
 	private Object convertValue(Comparator comparator, @Nullable Object value, TypeInformation<?> typeHint) {
 
-		if (Comparator.IN.equals(comparator) && value instanceof Collection<?> collection && !collection.isEmpty()) {
+		if ((Comparator.IN.equals(comparator) || Comparator.NOT_IN.equals(comparator))
+				&& value instanceof Collection<?> collection && !collection.isEmpty()) {
 
 			Collection<Object> mapped = new ArrayList<>(collection.size());
 

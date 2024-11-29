@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,7 @@ package org.springframework.data.relational.core.sql.render;
 import static org.assertj.core.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.data.relational.core.sql.Column;
-import org.springframework.data.relational.core.sql.Expression;
-import org.springframework.data.relational.core.sql.Expressions;
-import org.springframework.data.relational.core.sql.OrderByField;
-import org.springframework.data.relational.core.sql.SQL;
-import org.springframework.data.relational.core.sql.Select;
-import org.springframework.data.relational.core.sql.SimpleFunction;
-import org.springframework.data.relational.core.sql.Table;
+import org.springframework.data.relational.core.sql.*;
 
 import java.util.Arrays;
 import java.util.List;
@@ -36,6 +29,7 @@ import java.util.List;
  * @author Mark Paluch
  * @author Jens Schauder
  * @author Koen Punt
+ * @author Sven Rienstra
  */
 class OrderByClauseVisitorUnitTests {
 
@@ -128,5 +122,20 @@ class OrderByClauseVisitorUnitTests {
 		select.visit(visitor);
 
 		assertThat(visitor.getRenderedPart().toString()).isEqualTo("1 ASC");
+	}
+
+	@Test
+	void shouldRenderOrderByCase() {
+
+		Table employee = SQL.table("employee").as("emp");
+		Column column = employee.column("name");
+
+		CaseExpression caseExpression = CaseExpression.create(When.when(column.isNull(), SQL.literalOf(1))).elseExpression(SQL.literalOf(column));
+		Select select = Select.builder().select(column).from(employee).orderBy(OrderByField.from(caseExpression).asc()).build();
+
+		OrderByClauseVisitor visitor = new OrderByClauseVisitor(new SimpleRenderContext(NamingStrategies.asIs()));
+		select.visit(visitor);
+
+		assertThat(visitor.getRenderedPart().toString()).isEqualTo("CASE WHEN emp.name IS NULL THEN 1 ELSE emp.name END ASC");
 	}
 }

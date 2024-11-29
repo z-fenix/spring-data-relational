@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 the original author or authors.
+ * Copyright 2019-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -227,6 +227,6 @@ public class OutboundRow implements Map<SqlIdentifier, Parameter>, Cloneable {
 	}
 
 	private static Object convertKeyIfNecessary(Object key) {
-		return key instanceof String ? SqlIdentifier.unquoted((String) key) : key;
+		return key instanceof String keyString ? SqlIdentifier.unquoted(keyString) : key;
 	}
 }

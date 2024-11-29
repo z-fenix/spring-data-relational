@@ -1,5 +1,5 @@
 /*
-* Copyright 2019-2023 the original author or authors.
+* Copyright 2019-2024 the original author or authors.
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -15,17 +15,14 @@
 */
 package org.springframework.data.jdbc.core.convert;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.SQLType;
 
 import org.springframework.data.jdbc.core.mapping.JdbcValue;
 import org.springframework.data.relational.core.conversion.RelationalConverter;
-import org.springframework.data.relational.core.mapping.PersistentPropertyPathExtension;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
-import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.domain.RowDocument;
+import org.springframework.data.util.TypeInformation;
 import org.springframework.lang.Nullable;
 
 /**
@@ -33,6 +30,7 @@ import org.springframework.lang.Nullable;
  * versa.
  *
  * @author Jens Schauder
+ * @author Mark Paluch
  * @since 1.1
  */
 public interface JdbcConverter extends RelationalConverter {
@@ -47,49 +45,21 @@ public interface JdbcConverter extends RelationalConverter {
 	 * @return The converted value wrapped in a {@link JdbcValue}. Guaranteed to be not {@literal null}.
 	 * @since 2.4
 	 */
-	JdbcValue writeJdbcValue(@Nullable Object value, Class<?> type, SQLType sqlType);
-
-	/**
-	 * Read the current row from {@link ResultSet} to an {@link RelationalPersistentEntity#getType() entity}.
-	 *
-	 * @param entity the persistent entity type.
-	 * @param resultSet the {@link ResultSet} to read from.
-	 * @param key primary key.
-	 * @param <T>
-	 * @return
-	 * @deprecated since 3.2, use {@link #readAndResolve(Class, RowDocument, Identifier)} instead.
-	 */
-	@Deprecated(since = "3.2")
-	default <T> T mapRow(RelationalPersistentEntity<T> entity, ResultSet resultSet, Object key) {
-		try {
-			return readAndResolve(entity.getType(), RowDocumentResultSetExtractor.toRowDocument(resultSet));
-		} catch (SQLException e) {
-			throw new RuntimeException(e);
-		}
+	default JdbcValue writeJdbcValue(@Nullable Object value, Class<?> type, SQLType sqlType) {
+		return writeJdbcValue(value, TypeInformation.of(type), sqlType);
 	}
 
 	/**
-	 * Read the current row from {@link ResultSet} to an {@link PersistentPropertyPathExtension#getActualType() entity}.
+	 * Convert a property value into a {@link JdbcValue} that contains the converted value and information how to bind it
+	 * to JDBC parameters.
 	 *
-	 * @param path path to the owning property.
-	 * @param resultSet the {@link ResultSet} to read from.
-	 * @param identifier entity identifier.
-	 * @param key primary key.
-	 * @param <T>
-	 * @return
-	 * @deprecated use {@link #readAndResolve(Class, RowDocument, Identifier)} instead.
+	 * @param value a value as it is used in the object model. May be {@code null}.
+	 * @param type {@link TypeInformation} into which the value is to be converted. Must not be {@code null}.
+	 * @param sqlType the {@link SQLType} to be used if non is specified by a converter.
+	 * @return The converted value wrapped in a {@link JdbcValue}. Guaranteed to be not {@literal null}.
+	 * @since 3.2.6
 	 */
-	@SuppressWarnings("unchecked")
-	@Deprecated(since = "3.2", forRemoval = true)
-	default <T> T mapRow(PersistentPropertyPathExtension path, ResultSet resultSet, Identifier identifier, Object key) {
-
-		try {
-			return (T) readAndResolve(path.getRequiredLeafEntity().getType(),
-					RowDocumentResultSetExtractor.toRowDocument(resultSet), identifier);
-		} catch (SQLException e) {
-			throw new RuntimeException(e);
-		}
-	};
+	JdbcValue writeJdbcValue(@Nullable Object value, TypeInformation<?> type, SQLType sqlType);
 
 	/**
 	 * Read a {@link RowDocument} into the requested {@link Class aggregate type} and resolve references by looking these
@@ -118,7 +88,23 @@ public interface JdbcConverter extends RelationalConverter {
 	 * @since 3.2
 	 * @see #read(Class, RowDocument)
 	 */
-	<R> R readAndResolve(Class<R> type, RowDocument source, Identifier identifier);
+	default <R> R readAndResolve(Class<R> type, RowDocument source, Identifier identifier) {
+		return readAndResolve(TypeInformation.of(type), source, identifier);
+	}
+
+	/**
+	 * Read a {@link RowDocument} into the requested {@link TypeInformation aggregate type} and resolve references by
+	 * looking these up from {@link RelationResolver}.
+	 *
+	 * @param type target aggregate type.
+	 * @param source source {@link RowDocument}.
+	 * @param identifier identifier chain.
+	 * @return the converted object.
+	 * @param <R> aggregate type.
+	 * @since 3.2.6
+	 * @see #read(Class, RowDocument)
+	 */
+	<R> R readAndResolve(TypeInformation<R> type, RowDocument source, Identifier identifier);
 
 	/**
 	 * The type to be used to store this property in the database. Multidimensional arrays are unwrapped to reflect a
@@ -126,7 +112,7 @@ public interface JdbcConverter extends RelationalConverter {
 	 *
 	 * @return a {@link Class} that is suitable for usage with JDBC drivers.
 	 * @see org.springframework.data.jdbc.support.JdbcUtil#targetSqlTypeFor(Class)
-	 * @since 2.0
+	 * @since 2.0 TODO: Introduce variant returning TypeInformation.
 	 */
 	Class<?> getColumnType(RelationalPersistentProperty property);
 

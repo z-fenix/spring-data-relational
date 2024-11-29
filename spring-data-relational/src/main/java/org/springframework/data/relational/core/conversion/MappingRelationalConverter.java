@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,9 @@ import org.springframework.core.CollectionFactory;
 import org.springframework.core.ResolvableType;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.EnvironmentCapable;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.mapping.InstanceCreatorMetadata;
 import org.springframework.data.mapping.MappingException;
@@ -41,16 +44,7 @@ import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.mapping.PersistentPropertyPathAccessor;
 import org.springframework.data.mapping.context.MappingContext;
-import org.springframework.data.mapping.model.ConvertingPropertyAccessor;
-import org.springframework.data.mapping.model.DefaultSpELExpressionEvaluator;
-import org.springframework.data.mapping.model.EntityInstantiator;
-import org.springframework.data.mapping.model.ParameterValueProvider;
-import org.springframework.data.mapping.model.PersistentEntityParameterValueProvider;
-import org.springframework.data.mapping.model.PropertyValueProvider;
-import org.springframework.data.mapping.model.SimpleTypeHolder;
-import org.springframework.data.mapping.model.SpELContext;
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
-import org.springframework.data.mapping.model.SpELExpressionParameterValueProvider;
+import org.springframework.data.mapping.model.*;
 import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.projection.EntityProjectionIntrospector;
 import org.springframework.data.projection.EntityProjectionIntrospector.ProjectionPredicate;
@@ -67,30 +61,45 @@ import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.data.relational.domain.RowDocument;
 import org.springframework.data.util.Predicates;
 import org.springframework.data.util.TypeInformation;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.ObjectUtils;
 
 /**
- * {@link RelationalConverter} that uses a {@link MappingContext} to apply sophisticated mapping of domain objects from
- * {@link RowDocument}.
+ * {@link org.springframework.data.relational.core.conversion.RelationalConverter} that uses a
+ * {@link org.springframework.data.mapping.context.MappingContext} to apply sophisticated mapping of domain objects from
+ * {@link org.springframework.data.relational.domain.RowDocument}.
  *
  * @author Mark Paluch
  * @author Jens Schauder
  * @author Chirag Tailor
  * @author Vincent Galloy
- * @see MappingContext
+ * @author Chanhyeong Cho
+ * @author Lukáš Křečan
+ * @see org.springframework.data.mapping.context.MappingContext
  * @see SimpleTypeHolder
  * @see CustomConversions
  * @since 3.2
  */
-public class MappingRelationalConverter extends AbstractRelationalConverter implements ApplicationContextAware {
+public class MappingRelationalConverter extends AbstractRelationalConverter
+		implements ApplicationContextAware, EnvironmentCapable {
 
 	private SpELContext spELContext;
 
-	private final SpelAwareProxyProjectionFactory projectionFactory = new SpelAwareProxyProjectionFactory();
+	private @Nullable Environment environment;
+
+	private final ExpressionParser expressionParser = new SpelExpressionParser();
+
+	private final SpelAwareProxyProjectionFactory projectionFactory = new SpelAwareProxyProjectionFactory(
+			expressionParser);
 
 	private final EntityProjectionIntrospector introspector;
+
+	private final CachingValueExpressionEvaluatorFactory valueExpressionEvaluatorFactory = new CachingValueExpressionEvaluatorFactory(
+			expressionParser, this, o -> spELContext.getEvaluationContext(o));
 
 	/**
 	 * Creates a new {@link MappingRelationalConverter} given the new {@link RelationalMappingContext}.
@@ -118,7 +127,6 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		this.spELContext = new SpELContext(DocumentPropertyAccessor.INSTANCE);
 		this.introspector = createIntrospector(projectionFactory, getConversions(), getMappingContext());
-
 	}
 
 	private static EntityProjectionIntrospector createIntrospector(ProjectionFactory projectionFactory,
@@ -133,8 +141,18 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
 
 		this.spELContext = new SpELContext(this.spELContext, applicationContext);
+		this.environment = applicationContext.getEnvironment();
 		this.projectionFactory.setBeanFactory(applicationContext);
 		this.projectionFactory.setBeanClassLoader(applicationContext.getClassLoader());
+	}
+
+	@Override
+	public Environment getEnvironment() {
+
+		if (this.environment == null) {
+			this.environment = new StandardEnvironment();
+		}
+		return this.environment;
 	}
 
 	/**
@@ -196,7 +214,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		TypeInformation<?> mappedType = projection.getActualMappedType();
 		RelationalPersistentEntity<R> mappedEntity = (RelationalPersistentEntity<R>) getMappingContext()
 				.getPersistentEntity(mappedType);
-		SpELExpressionEvaluator evaluator = new DefaultSpELExpressionEvaluator(document, spELContext);
+		ValueExpressionEvaluator evaluator = valueExpressionEvaluatorFactory.create(document);
 
 		boolean isInterfaceProjection = mappedType.getType().isInterface();
 		if (isInterfaceProjection) {
@@ -238,17 +256,8 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		EntityInstantiator instantiator = getEntityInstantiators().getInstantiatorFor(mappedEntity);
 		R instance = instantiator.createInstance(mappedEntity, provider);
-		PersistentPropertyAccessor<R> accessor = mappedEntity.getPropertyAccessor(instance);
 
-		populateProperties(context, mappedEntity, documentAccessor, evaluator, instance);
-
-		PersistentPropertyAccessor<?> convertingAccessor = new ConvertingPropertyAccessor<>(accessor,
-				getConversionService());
-		RelationalPropertyValueProvider valueProvider = newValueProvider(documentAccessor, evaluator, context);
-
-		readProperties(context, mappedEntity, convertingAccessor, documentAccessor, valueProvider, Predicates.isTrue());
-
-		return accessor.getBean();
+		return populateProperties(context, mappedEntity, documentAccessor, evaluator, instance);
 	}
 
 	private Object doReadOrProject(ConversionContext context, RowDocument source, TypeInformation<?> typeHint,
@@ -307,7 +316,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	 * @return the converted object, will never be {@literal null}.
 	 */
 	protected <S> S readAggregate(ConversionContext context, RowDocument document,
-								  TypeInformation<? extends S> typeHint) {
+			TypeInformation<? extends S> typeHint) {
 		return readAggregate(context, new RowDocumentAccessor(document), typeHint);
 	}
 
@@ -321,23 +330,23 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	 */
 	@SuppressWarnings("unchecked")
 	protected <S> S readAggregate(ConversionContext context, RowDocumentAccessor documentAccessor,
-								  TypeInformation<? extends S> typeHint) {
+			TypeInformation<? extends S> typeHint) {
 
 		Class<? extends S> rawType = typeHint.getType();
 
-		if (getConversions().hasCustomReadTarget(documentAccessor.getClass(), rawType)) {
-			return doConvert(documentAccessor, rawType, typeHint.getType());
+		if (getConversions().hasCustomReadTarget(RowDocument.class, rawType)) {
+			return doConvert(documentAccessor.getDocument(), rawType, typeHint.getType());
 		}
 
 		if (RowDocument.class.isAssignableFrom(rawType)) {
-			return (S) documentAccessor.document();
+			return (S) documentAccessor.getDocument();
 		}
 
 		if (typeHint.isMap()) {
 			return context.convert(documentAccessor, typeHint);
 		}
 
-		RelationalPersistentEntity<?> entity = getMappingContext().getPersistentEntity(rawType);
+		RelationalPersistentEntity<?> entity = getMappingContext().getPersistentEntity(typeHint);
 
 		if (entity == null) {
 			throw new MappingException(
@@ -430,8 +439,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	}
 
 	@SuppressWarnings("ConstantConditions")
-	private <T> T doConvert(Object value, Class<? extends T> target,
-							@Nullable Class<? extends T> fallback) {
+	private <T> T doConvert(Object value, Class<? extends T> target, @Nullable Class<? extends T> fallback) {
 
 		if (getConversionService().canConvert(value.getClass(), target) || fallback == null) {
 			return getConversionService().convert(value, target);
@@ -442,7 +450,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	private <S> S read(ConversionContext context, RelationalPersistentEntity<S> entity,
 			RowDocumentAccessor documentAccessor) {
 
-		SpELExpressionEvaluator evaluator = new DefaultSpELExpressionEvaluator(documentAccessor.getDocument(), spELContext);
+		ValueExpressionEvaluator evaluator = valueExpressionEvaluatorFactory.create(documentAccessor.getDocument());
 
 		InstanceCreatorMetadata<RelationalPersistentProperty> instanceCreatorMetadata = entity.getInstanceCreatorMetadata();
 
@@ -453,29 +461,22 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		EntityInstantiator instantiator = getEntityInstantiators().getInstantiatorFor(entity);
 		S instance = instantiator.createInstance(entity, provider);
 
-		if (entity.requiresPropertyPopulation()) {
-			return populateProperties(context, entity, documentAccessor, evaluator, instance);
-		}
-
-		return instance;
-	}
-
-	@Override
-	public <T> T createInstance(PersistentEntity<T, RelationalPersistentProperty> entity,
-			Function<Parameter<?, RelationalPersistentProperty>, Object> parameterValueProvider) {
-
-		return getEntityInstantiators().getInstantiatorFor(entity) //
-				.createInstance(entity, new ConvertingParameterValueProvider<>(parameterValueProvider));
+		return populateProperties(context, entity, documentAccessor, evaluator, instance);
 	}
 
 	private ParameterValueProvider<RelationalPersistentProperty> getParameterProvider(ConversionContext context,
-			RelationalPersistentEntity<?> entity, RowDocumentAccessor source, SpELExpressionEvaluator evaluator) {
+			RelationalPersistentEntity<?> entity, RowDocumentAccessor source, ValueExpressionEvaluator evaluator) {
 
 		// Ensure that ConversionContext is contextualized to the current property.
 		RelationalPropertyValueProvider contextualizing = new RelationalPropertyValueProvider() {
 			@Override
 			public boolean hasValue(RelationalPersistentProperty property) {
 				return withContext(context.forProperty(property)).hasValue(property);
+			}
+
+			@Override
+			public boolean hasNonEmptyValue(RelationalPersistentProperty property) {
+				return withContext(context.forProperty(property)).hasNonEmptyValue(property);
 			}
 
 			@SuppressWarnings("unchecked")
@@ -503,12 +504,16 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		PersistentEntityParameterValueProvider<RelationalPersistentProperty> parameterProvider = new PersistentEntityParameterValueProvider<>(
 				entity, contextualizing, context.getPath().getCurrentObject());
 
-		return new ConverterAwareSpELExpressionParameterValueProvider(context, evaluator, getConversionService(),
-				parameterProvider);
+		return new ConverterAwareExpressionParameterValueProvider(context, evaluator, getConversionService(),
+				new ConvertingParameterValueProvider<>(parameterProvider::getParameterValue));
 	}
 
 	private <S> S populateProperties(ConversionContext context, RelationalPersistentEntity<S> entity,
-			RowDocumentAccessor documentAccessor, SpELExpressionEvaluator evaluator, S instance) {
+			RowDocumentAccessor documentAccessor, ValueExpressionEvaluator evaluator, S instance) {
+
+		if (!entity.requiresPropertyPopulation()) {
+			return instance;
+		}
 
 		PersistentPropertyAccessor<S> accessor = new ConvertingPropertyAccessor<>(entity.getPropertyAccessor(instance),
 				getConversionService());
@@ -526,7 +531,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	}
 
 	protected RelationalPropertyValueProvider newValueProvider(RowDocumentAccessor documentAccessor,
-			SpELExpressionEvaluator evaluator, ConversionContext context) {
+			ValueExpressionEvaluator evaluator, ConversionContext context) {
 		return new DocumentValueProvider(context, documentAccessor, evaluator, spELContext);
 	}
 
@@ -549,6 +554,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 				continue;
 			}
 
+			// this hasValue should actually check against null
 			if (!valueProviderToUse.hasValue(property)) {
 				continue;
 			}
@@ -580,10 +586,19 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		for (RelationalPersistentProperty persistentProperty : unwrappedEntity) {
 
-			RelationalPropertyValueProvider contextual = propertyValueProvider
-					.withContext(context.forProperty(persistentProperty));
+			ConversionContext nestedContext = context.forProperty(persistentProperty);
+			RelationalPropertyValueProvider contextual = propertyValueProvider.withContext(nestedContext);
 
-			if (contextual.hasValue(persistentProperty)) {
+			if (persistentProperty.isEmbedded()) {
+
+				RelationalPersistentEntity<?> nestedEntity = getMappingContext()
+						.getRequiredPersistentEntity(persistentProperty);
+
+				if (shouldReadEmbeddable(nestedContext, persistentProperty, nestedEntity, contextual)) {
+					return true;
+				}
+
+			} else if (contextual.hasNonEmptyValue(persistentProperty)) {
 				return true;
 			}
 		}
@@ -597,14 +612,6 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		if (null == value) {
 			return null;
-		}
-
-		if (getConversions().hasCustomReadTarget(value.getClass(), type.getType())) {
-
-			TypeDescriptor sourceDescriptor = TypeDescriptor.valueOf(value.getClass());
-			TypeDescriptor targetDescriptor = createTypeDescriptor(type);
-
-			return getConversionService().convert(value, sourceDescriptor, targetDescriptor);
 		}
 
 		return getPotentiallyConvertedSimpleRead(value, type);
@@ -641,6 +648,11 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	protected Object getPotentiallyConvertedSimpleRead(Object value, TypeInformation<?> type) {
 
 		Class<?> target = type.getType();
+
+		if (getConversions().hasCustomReadTarget(value.getClass(), target)) {
+			return getConversionService().convert(value, TypeDescriptor.forObject(value), createTypeDescriptor(type));
+		}
+
 		if (ClassUtils.isAssignableValue(target, value)) {
 			return value;
 		}
@@ -673,8 +685,28 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		if (getConversions().isSimpleType(value.getClass())) {
 
-			if (TypeInformation.OBJECT != type && getConversionService().canConvert(value.getClass(), type.getType())) {
-				value = getConversionService().convert(value, type.getType());
+			Optional<Class<?>> customWriteTarget = getConversions().hasCustomWriteTarget(value.getClass(), type.getType())
+					? getConversions().getCustomWriteTarget(value.getClass(), type.getType())
+					: getConversions().getCustomWriteTarget(type.getType());
+
+			if (customWriteTarget.isPresent()) {
+				return getConversionService().convert(value, customWriteTarget.get());
+			}
+
+			if (TypeInformation.OBJECT != type) {
+
+				if (type.getType().isAssignableFrom(value.getClass())) {
+
+					if (value.getClass().isEnum()) {
+						return getPotentiallyConvertedSimpleWrite(value);
+					}
+
+					return value;
+				} else {
+					if (getConversionService().canConvert(value.getClass(), type.getType())) {
+						value = getConversionService().convert(value, type.getType());
+					}
+				}
 			}
 
 			return getPotentiallyConvertedSimpleWrite(value);
@@ -688,15 +720,20 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 			return writeCollection((Iterable<?>) value, type);
 		}
 
-		RelationalPersistentEntity<?> persistentEntity = getMappingContext().getPersistentEntity(value.getClass());
+		if (getMappingContext().hasPersistentEntityFor(value.getClass())) {
 
-		if (persistentEntity != null) {
+			RelationalPersistentEntity<?> persistentEntity = getMappingContext().getPersistentEntity(value.getClass());
 
-			Object id = persistentEntity.getIdentifierAccessor(value).getIdentifier();
-			return writeValue(id, type);
+			if (persistentEntity != null) {
+
+				Object id = persistentEntity.getIdentifierAccessor(value).getIdentifier();
+				return writeValue(id, type);
+			}
 		}
 
-		return getConversionService().convert(value, type.getType());
+		return
+
+		getConversionService().convert(value, type.getType());
 	}
 
 	private Object writeArray(Object value, TypeInformation<?> type) {
@@ -787,8 +824,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		@SuppressWarnings("unchecked")
 		@Override
-		public <S> S convert(Object source, TypeInformation<? extends S> typeHint,
-							 ConversionContext context) {
+		public <S> S convert(Object source, TypeInformation<? extends S> typeHint, ConversionContext context) {
 
 			Assert.notNull(source, "Source must not be null");
 			Assert.notNull(typeHint, "TypeInformation must not be null");
@@ -854,7 +890,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		 *
 		 * @param <T>
 		 */
-		interface ValueConverter<T> {
+		protected interface ValueConverter<T> {
 
 			Object convert(T source, TypeInformation<?> typeHint);
 
@@ -866,7 +902,7 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		 *
 		 * @param <T>
 		 */
-		interface ContainerValueConverter<T> {
+		protected interface ContainerValueConverter<T> {
 
 			Object convert(ConversionContext context, T source, TypeInformation<?> typeHint);
 
@@ -875,7 +911,9 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	}
 
 	/**
-	 * @since 3.4.3
+	 * Projecting variant of {@link ConversionContext} applying mapping-metadata rules from the related entity.
+	 *
+	 * @since 3.2
 	 */
 	protected class ProjectingConversionContext extends DefaultConversionContext {
 
@@ -969,10 +1007,19 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		 */
 		ConversionContext withPath(ObjectPath currentPath);
 
+		/**
+		 * @return the current {@link ObjectPath}. Can be {@link ObjectPath#ROOT} for top-level contexts.
+		 */
 		ObjectPath getPath();
 
+		/**
+		 * @return the associated conversions.
+		 */
 		CustomConversions getCustomConversions();
 
+		/**
+		 * @return source {@link RelationalConverter}.
+		 */
 		RelationalConverter getSourceConverter();
 
 	}
@@ -1001,6 +1048,13 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		boolean hasValue(RelationalPersistentProperty property);
 
 		/**
+		 * Determine whether there is a non empty value for the given {@link RelationalPersistentProperty}.
+		 *
+		 * @param property the property to check for whether a value is present.
+		 */
+		boolean hasNonEmptyValue(RelationalPersistentProperty property);
+
+		/**
 		 * Contextualize this property value provider.
 		 *
 		 * @param context the context to use.
@@ -1020,6 +1074,8 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		 * @param path the path to check for whether a value is present.
 		 */
 		boolean hasValue(AggregatePath path);
+
+		boolean hasNonEmptyValue(AggregatePath aggregatePath);
 
 		/**
 		 * Determine whether there is a value for the given {@link SqlIdentifier}.
@@ -1056,26 +1112,29 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		private final ConversionContext context;
 		private final RowDocumentAccessor accessor;
-		private final SpELExpressionEvaluator evaluator;
+		private final ValueExpressionEvaluator evaluator;
 		private final SpELContext spELContext;
+		private final RowDocument document;
 
 		/**
-		 * Creates a new {@link RelationalPropertyValueProvider} for the given source and {@link SpELExpressionEvaluator}.
+		 * Creates a new {@link RelationalPropertyValueProvider} for the given source and {@link ValueExpressionEvaluator}.
 		 *
 		 * @param context must not be {@literal null}.
 		 * @param accessor must not be {@literal null}.
 		 * @param evaluator must not be {@literal null}.
 		 */
 		private DocumentValueProvider(ConversionContext context, RowDocumentAccessor accessor,
-				SpELExpressionEvaluator evaluator, SpELContext spELContext) {
+				ValueExpressionEvaluator evaluator, SpELContext spELContext) {
 
 			Assert.notNull(context, "ConversionContext must no be null");
 			Assert.notNull(accessor, "DocumentAccessor must no be null");
-			Assert.notNull(evaluator, "SpELExpressionEvaluator must not be null");
+			Assert.notNull(evaluator, "ValueExpressionEvaluator must not be null");
+
 			this.context = context;
 			this.accessor = accessor;
 			this.evaluator = evaluator;
 			this.spELContext = spELContext;
+			this.document = accessor.getDocument();
 		}
 
 		@Override
@@ -1100,11 +1159,16 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 			return accessor.hasValue(property);
 		}
 
+		@Override
+		public boolean hasNonEmptyValue(RelationalPersistentProperty property) {
+			return hasValue(property);
+		}
+
 		@Nullable
 		@Override
 		public Object getValue(AggregatePath path) {
 
-			Object value = accessor.document().get(path.getColumnInfo().alias().getReference());
+			Object value = document.get(path.getColumnInfo().alias().getReference());
 
 			if (value == null) {
 				return null;
@@ -1115,25 +1179,44 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 
 		@Override
 		public boolean hasValue(AggregatePath path) {
-			return accessor.document().get(path.getColumnInfo().alias().getReference()) != null;
+
+			Object value = document.get(path.getColumnInfo().alias().getReference());
+
+			if (value == null) {
+				return false;
+			}
+
+			if (!path.isCollectionLike()) {
+				return true;
+			}
+
+			return true;
+		}
+
+		@Override
+		public boolean hasNonEmptyValue(AggregatePath path) {
+
+			if (!hasValue(path)) {
+				return false;
+			}
+
+			Object value = document.get(path.getColumnInfo().alias().getReference());
+
+			if (value instanceof Collection<?> || value.getClass().isArray()) {
+				return !ObjectUtils.isEmpty(value);
+			}
+
+			return true;
 		}
 
 		@Override
 		public boolean hasValue(SqlIdentifier identifier) {
-			return accessor().document().get(identifier.getReference()) != null;
+			return document.get(identifier.getReference()) != null;
 		}
 
 		@Override
 		public DocumentValueProvider withContext(ConversionContext context) {
 			return context == this.context ? this : new DocumentValueProvider(context, accessor, evaluator, spELContext);
-		}
-
-		public ConversionContext context() {
-			return context;
-		}
-
-		public RowDocumentAccessor accessor() {
-			return accessor;
 		}
 
 	}
@@ -1163,25 +1246,24 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 	}
 
 	/**
-	 * Extension of {@link SpELExpressionParameterValueProvider} to recursively trigger value conversion on the raw
+	 * Extension of {@link ValueExpressionParameterValueProvider} to recursively trigger value conversion on the raw
 	 * resolved SpEL value.
 	 */
-	private static class ConverterAwareSpELExpressionParameterValueProvider
-			extends SpELExpressionParameterValueProvider<RelationalPersistentProperty> {
+	private static class ConverterAwareExpressionParameterValueProvider
+			extends ValueExpressionParameterValueProvider<RelationalPersistentProperty> {
 
 		private final ConversionContext context;
 
 		/**
-		 * Creates a new {@link ConverterAwareSpELExpressionParameterValueProvider}.
+		 * Creates a new {@link ConverterAwareExpressionParameterValueProvider}.
 		 *
 		 * @param context must not be {@literal null}.
 		 * @param evaluator must not be {@literal null}.
 		 * @param conversionService must not be {@literal null}.
 		 * @param delegate must not be {@literal null}.
 		 */
-		public ConverterAwareSpELExpressionParameterValueProvider(ConversionContext context,
-				SpELExpressionEvaluator evaluator, ConversionService conversionService,
-				ParameterValueProvider<RelationalPersistentProperty> delegate) {
+		public ConverterAwareExpressionParameterValueProvider(ConversionContext context, ValueExpressionEvaluator evaluator,
+				ConversionService conversionService, ParameterValueProvider<RelationalPersistentProperty> delegate) {
 
 			super(evaluator, conversionService, delegate);
 
@@ -1191,12 +1273,14 @@ public class MappingRelationalConverter extends AbstractRelationalConverter impl
 		}
 
 		@Override
-		protected <T> T potentiallyConvertSpelValue(Object object, Parameter<T, RelationalPersistentProperty> parameter) {
+		protected <T> T potentiallyConvertExpressionValue(Object object,
+				Parameter<T, RelationalPersistentProperty> parameter) {
 			return context.convert(object, parameter.getType());
 		}
+
 	}
 
-	private record PropertyTranslatingPropertyAccessor<T> (PersistentPropertyAccessor<T> delegate,
+	private record PropertyTranslatingPropertyAccessor<T>(PersistentPropertyAccessor<T> delegate,
 			PersistentPropertyTranslator propertyTranslator) implements PersistentPropertyAccessor<T> {
 
 		static <T> PersistentPropertyAccessor<T> create(PersistentPropertyAccessor<T> delegate,

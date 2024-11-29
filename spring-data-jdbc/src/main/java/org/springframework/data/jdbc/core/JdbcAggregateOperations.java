@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 the original author or authors.
+ * Copyright 2017-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.springframework.data.jdbc.core;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.dao.IncorrectUpdateSemanticsDataAccessException;
@@ -58,7 +59,7 @@ public interface JdbcAggregateOperations {
 	 *           resulting update does not update any rows.
 	 * @since 3.0
 	 */
-	<T> Iterable<T> saveAll(Iterable<T> instances);
+	<T> List<T> saveAll(Iterable<T> instances);
 
 	/**
 	 * Dedicated insert function. This skips the test if the aggregate root is new and makes an insert.
@@ -103,7 +104,7 @@ public interface JdbcAggregateOperations {
 	 * @return the saved instances.
 	 * @since 3.1
 	 */
-	<T> Iterable<T> updateAll(Iterable<T> instances);
+	<T> List<T> updateAll(Iterable<T> instances);
 
 	/**
 	 * Counts the number of aggregates of a given type.
@@ -162,7 +163,7 @@ public interface JdbcAggregateOperations {
 	 * @param <T> the type of the aggregate roots. Must not be {@code null}.
 	 * @return Guaranteed to be not {@code null}.
 	 */
-	<T> Iterable<T> findAllById(Iterable<?> ids, Class<T> domainType);
+	<T> List<T> findAllById(Iterable<?> ids, Class<T> domainType);
 
 	/**
 	 * Load all aggregates of a given type.
@@ -171,7 +172,7 @@ public interface JdbcAggregateOperations {
 	 * @param <T> the type of the aggregate roots. Must not be {@code null}.
 	 * @return Guaranteed to be not {@code null}.
 	 */
-	<T> Iterable<T> findAll(Class<T> domainType);
+	<T> List<T> findAll(Class<T> domainType);
 
 	/**
 	 * Load all aggregates of a given type, sorted.
@@ -182,7 +183,7 @@ public interface JdbcAggregateOperations {
 	 * @return Guaranteed to be not {@code null}.
 	 * @since 2.0
 	 */
-	<T> Iterable<T> findAll(Class<T> domainType, Sort sort);
+	<T> List<T> findAll(Class<T> domainType, Sort sort);
 
 	/**
 	 * Load a page of (potentially sorted) aggregates of a given type.
@@ -207,7 +208,7 @@ public interface JdbcAggregateOperations {
 	<T> Optional<T> findOne(Query query, Class<T> domainType);
 
 	/**
-	 * Execute a {@code SELECT} query and convert the resulting items to a {@link Iterable} that is sorted.
+	 * Execute a {@code SELECT} query and convert the resulting items to a {@link List} that is sorted.
 	 *
 	 * @param query must not be {@literal null}.
 	 * @param domainType the entity type must not be {@literal null}.
@@ -215,7 +216,7 @@ public interface JdbcAggregateOperations {
 	 * @throws org.springframework.dao.IncorrectResultSizeDataAccessException if more than one match found.
 	 * @since 3.0
 	 */
-	<T> Iterable<T> findAll(Query query, Class<T> domainType);
+	<T> List<T> findAll(Query query, Class<T> domainType);
 
 	/**
 	 * Returns a {@link Page} of entities matching the given {@link Query}. In case no match could be found, an empty
@@ -266,22 +267,6 @@ public interface JdbcAggregateOperations {
 	<T> void delete(T aggregateRoot);
 
 	/**
-	 * Delete an aggregate identified by its aggregate root.
-	 *
-	 * @param aggregateRoot to delete. Must not be {@code null}.
-	 * @param domainType the type of the aggregate root. Must not be {@code null}.
-	 * @param <T> the type of the aggregate root.
-	 * @throws org.springframework.dao.OptimisticLockingFailureException when {@literal T} has a version attribute and the
-	 *           version attribute of the provided entity does not match the version attribute in the database, or when
-	 *           there is no aggregate root with matching id. In other cases a NOOP delete is silently ignored.
-	 * @deprecated since 3.0 use {@link #delete(Object)} instead
-	 */
-	@Deprecated(since = "3.0")
-	default <T> void delete(T aggregateRoot, Class<T> domainType) {
-		delete(aggregateRoot);
-	}
-
-	/**
 	 * Delete all aggregates of a given type.
 	 *
 	 * @param domainType type of the aggregate roots to be deleted. Must not be {@code null}.
@@ -295,21 +280,4 @@ public interface JdbcAggregateOperations {
 	 * @param <T> the type of the aggregate roots.
 	 */
 	<T> void deleteAll(Iterable<? extends T> aggregateRoots);
-
-	/**
-	 * Delete all aggregates identified by their aggregate roots.
-	 *
-	 * @param aggregateRoots to delete. Must not be {@code null}.
-	 * @param domainType type of the aggregate roots to be deleted. Must not be {@code null}.
-	 * @param <T> the type of the aggregate roots.
-	 * @throws org.springframework.dao.OptimisticLockingFailureException when {@literal T} has a version attribute and for
-	 *           at least on entity the version attribute of the entity does not match the version attribute in the
-	 *           database, or when there is no aggregate root with matching id. In other cases a NOOP delete is silently
-	 *           ignored.
-	 * @deprecated since 3.0 use {@link #deleteAll(Iterable)} instead.
-	 */
-	@Deprecated(since = "3.0")
-	default <T> void deleteAll(Iterable<? extends T> aggregateRoots, Class<T> domainType) {
-		deleteAll(aggregateRoots);
-	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 the original author or authors.
+ * Copyright 2023-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,12 +67,6 @@ class EmbeddedRelationalPersistentProperty implements RelationalPersistentProper
 	@Override
 	public RelationalPersistentEntity<?> getOwner() {
 		return delegate.getOwner();
-	}
-
-	@Override
-	@Deprecated(since = "3.2", forRemoval = true)
-	public SqlIdentifier getReverseColumnName(PersistentPropertyPathExtension path) {
-		return delegate.getReverseColumnName(path);
 	}
 
 	@Override
@@ -290,10 +284,16 @@ class EmbeddedRelationalPersistentProperty implements RelationalPersistentProper
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (delegate == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 
 		EmbeddedRelationalPersistentProperty that = (EmbeddedRelationalPersistentProperty) o;
 
